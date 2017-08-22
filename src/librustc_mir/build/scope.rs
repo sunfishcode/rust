@@ -352,6 +352,8 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
         }
         let scope = self.scopes.pop().unwrap();
         assert_eq!(scope.extent, extent.0);
+
+        self.cfg.push_end_region(block, extent.1, scope.extent);
         unpack!(block = build_scope_drops(&mut self.cfg,
                                           &scope,
                                           &self.scopes,
@@ -359,7 +361,6 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                                           self.arg_count,
                                           false));
 
-        self.cfg.push_end_region(block, extent.1, scope.extent);
         block.unit()
     }
 
@@ -404,15 +405,16 @@ impl<'a, 'gcx, 'tcx> Builder<'a, 'gcx, 'tcx> {
                 scope.cached_exits.insert((target, extent.0), b);
                 b
             };
+
+            // End all regions for scopes out of which we are breaking.
+            self.cfg.push_end_region(block, extent.1, scope.extent);
+
             unpack!(block = build_scope_drops(&mut self.cfg,
                                               scope,
                                               rest,
                                               block,
                                               self.arg_count,
                                               false));
-
-            // End all regions for scopes out of which we are breaking.
-            self.cfg.push_end_region(block, extent.1, scope.extent);
         }
         }
         let scope = &self.scopes[len - scope_count];
