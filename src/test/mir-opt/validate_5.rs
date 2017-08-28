@@ -54,8 +54,8 @@ fn main() {
 //         _5 = &ReErased mut (*_3);
 //         Validate(Acquire, [(*_5): i32/ReScope(Misc(NodeId(44)))]);
 //         _4 = _5 as *mut i32 (Misc);
-//         StorageDead(_5);
 //         EndRegion(ReScope(Misc(NodeId(44))));
+//         StorageDead(_5);
 //         Validate(Release, [_0: bool, _4: *mut i32]);
 //         _0 = const write_42(_4) -> bb1;
 //     }

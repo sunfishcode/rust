@@ -30,8 +30,8 @@ fn main() {
 //         StorageLive(_2);
 //         _2 = &'6_1rce _1;
 //         _0 = ();
-//         StorageDead(_2);
 //         EndRegion('6_1rce);
+//         StorageDead(_2);
 //         StorageDead(_1);
 //         return;
 //     }

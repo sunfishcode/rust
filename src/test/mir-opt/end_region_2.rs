@@ -46,8 +46,8 @@ fn main() {
 //     bb2: {
 //         _0 = ();
 //         StorageDead(_5);
-//         StorageDead(_3);
 //         EndRegion('7_1rce);
+//         StorageDead(_3);
 //         StorageDead(_2);
 //         return;
 //     }
@@ -56,10 +56,10 @@ fn main() {
 //         StorageLive(_7);
 //         _7 = &'7_3rce _2;
 //         _1 = ();
-//         StorageDead(_7);
 //         EndRegion('7_3rce);
-//         StorageDead(_3);
+//         StorageDead(_7);
 //         EndRegion('7_1rce);
+//         StorageDead(_3);
 //         StorageDead(_2);
 //         goto -> bb1;
 //     }
