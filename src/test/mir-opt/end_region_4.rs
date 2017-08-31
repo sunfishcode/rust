@@ -53,10 +53,10 @@ fn foo(i: i32) {
 //         StorageLive(_6);
 //         _6 = &'6_4rce _2;
 //         _0 = ();
-//         StorageDead(_6);
 //         EndRegion('6_4rce);
-//         StorageDead(_3);
+//         StorageDead(_6);
 //         EndRegion('6_2rce);
+//         StorageDead(_3);
 //         StorageDead(_2);
 //         drop(_1) -> bb4;
 //     }

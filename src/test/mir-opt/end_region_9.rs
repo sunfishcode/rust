@@ -67,8 +67,8 @@ fn main() {
 //    bb2: {
 //        _0 = ();
 //        StorageDead(_7);
-//        StorageDead(_4);
 //        EndRegion('13_0rce);
+//        StorageDead(_4);
 //        StorageDead(_2);
 //        StorageDead(_1);
 //        return;
@@ -83,3 +83,4 @@ fn main() {
 //        goto -> bb1;
 //    }
 // }
+// END rustc.node4.SimplifyCfg-qualify-consts.after.mir
