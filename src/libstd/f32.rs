@@ -190,6 +190,26 @@ impl f32 {
         return unsafe { intrinsics::ceilf32(self) };
     }
 
+    /// Returns the nearest integer to a number. Round half-way cases using the
+    /// same rounding mode as arithmetic operations.
+    ///
+    /// ```
+    /// let f = 3.01_f32;
+    /// let g = 3.99_f32;
+    ///
+    /// assert_eq!(f.nearbyint(), 3.0);
+    /// assert_eq!(g.nearbyint(), 4.0);
+    /// ```
+    #[stable(feature = "rust1", since = "1.25.0")]
+    #[inline]
+    pub fn nearbyint(self) -> f32 {
+        // see notes above in `floor`
+        #[cfg(target_env = "msvc")]
+        return (self as f64).nearbyint() as f32;
+        #[cfg(not(target_env = "msvc"))]
+        return unsafe { intrinsics::nearbyintf32(self) };
+    }
+
     /// Returns the nearest integer to a number. Round half-way cases away from
     /// `0.0`.
     ///
@@ -1263,6 +1283,22 @@ mod tests {
         assert_approx_eq!((-1.3f32).ceil(), -1.0f32);
         assert_approx_eq!((-1.5f32).ceil(), -1.0f32);
         assert_approx_eq!((-1.7f32).ceil(), -1.0f32);
+    }
+
+    #[test]
+    fn test_nearbyint() {
+        assert_approx_eq!(1.0f32.nearbyint(), 1.0f32);
+        assert_approx_eq!(1.3f32.nearbyint(), 1.0f32);
+        assert_approx_eq!(1.5f32.nearbyint(), 2.0f32);
+        assert_approx_eq!(1.7f32.nearbyint(), 2.0f32);
+        assert_approx_eq!(2.5f32.nearbyint(), 2.0f32);
+        assert_approx_eq!(0.0f32.nearbyint(), 0.0f32);
+        assert_approx_eq!((-0.0f32).nearbyint(), -0.0f32);
+        assert_approx_eq!((-1.0f32).nearbyint(), -1.0f32);
+        assert_approx_eq!((-1.3f32).nearbyint(), -1.0f32);
+        assert_approx_eq!((-1.5f32).nearbyint(), -2.0f32);
+        assert_approx_eq!((-1.7f32).nearbyint(), -2.0f32);
+        assert_approx_eq!((-2.5f32).nearbyint(), -2.0f32);
     }
 
     #[test]

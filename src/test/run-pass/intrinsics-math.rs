@@ -62,6 +62,9 @@ pub fn main() {
     assert_approx_eq!((-2.3f32).ceil(), -2.0f32);
     assert_approx_eq!(3.8f64.ceil(), 4.0f64);
 
+    assert_approx_eq!((2.3f32).nearbyint(), 2.0f32);
+    assert_approx_eq!(-3.3f64.nearbyint(), -3.0f64);
+
     assert_approx_eq!(0.1f32.trunc(), 0.0f32);
     assert_approx_eq!((-0.1f64).trunc(), 0.0f64);
 }
