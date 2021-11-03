@@ -15,4 +15,4 @@ rustc_index = { path = "../rustc_index" }
 rustc_lexer = { path = "../rustc_lexer" }
 rustc_macros = { path = "../rustc_macros" }
 smallvec = { version = "1.6.1", features = ["union", "may_dangle"] }
-bitflags = "1.2.1"
+bitflags = "1.3.2"
