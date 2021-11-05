@@ -14,6 +14,7 @@ use crate::sys_common::{AsInner, FromInner, IntoInner};
 use crate::time::Duration;
 
 use libc::{c_int, c_void};
+use rustix::net::SendFlags;
 
 cfg_if::cfg_if! {
     if #[cfg(any(
@@ -669,10 +670,7 @@ impl UdpSocket {
     }
 
     pub fn send(&self, buf: &[u8]) -> io::Result<usize> {
-        let len = cmp::min(buf.len(), <wrlen_t>::MAX as usize) as wrlen_t;
-        let ret = cvt(unsafe {
-            c::send(self.inner.as_raw(), buf.as_ptr() as *const c_void, len, MSG_NOSIGNAL)
-        })?;
+        let ret = rustix::net::send(&self.inner, buf, SendFlags::NOSIGNAL)?;
         Ok(ret as usize)
     }
 
