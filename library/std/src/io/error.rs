@@ -896,3 +896,11 @@ fn _assert_error_is_sync_send() {
     fn _is_sync_send<T: Sync + Send>() {}
     _is_sync_send::<Error>();
 }
+
+#[unstable(feature = "rustix", issue = "none")]
+impl From<rustix::io::Error> for crate::io::Error {
+    #[inline]
+    fn from(err: rustix::io::Error) -> Self {
+        Self::from_raw_os_error(err.raw_os_error() as _)
+    }
+}
