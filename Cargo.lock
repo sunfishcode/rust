@@ -2232,6 +2232,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "linux-raw-sys"
+version = "0.0.44"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5982728f218aa95d578904e628c5dcd5a9fbf2d8f83d0b4e54a64ed1eee5e0a8"
+dependencies = [
+ "compiler_builtins",
+ "rustc-std-workspace-core",
+]
+
+[[package]]
+name = "linux-raw-sys"
+version = "0.0.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4d2456c373231a208ad294c33dc5bff30051eafd954cd4caae83a712b12854d"
+dependencies = [
+ "compiler_builtins",
+ "rustc-std-workspace-core",
+]
+
+[[package]]
 name = "lld-wrapper"
 version = "0.1.0"
 
@@ -2654,6 +2674,20 @@ name = "ordslice"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd20eec3dbe4376829cb7d80ae6ac45e0a766831dca50202ff2d40db46a8a024"
+
+[[package]]
+name = "origin"
+version = "0.3.1-alpha.0"
+source = "git+https://github.com/sunfishcode/mustang?branch=rustc-dep-of-std#47173c85eb783025bdfef45ab1c6d6aecd8a1f0b"
+dependencies = [
+ "bitflags",
+ "compiler_builtins",
+ "libc",
+ "linux-raw-sys 0.0.44",
+ "rustc-std-workspace-alloc",
+ "rustc-std-workspace-core",
+ "rustix",
+]
 
 [[package]]
 name = "os_info"
@@ -4732,6 +4766,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustix"
+version = "0.35.6-alpha.1"
+source = "git+https://github.com/bytecodealliance/rustix?branch=rustc-dep-of-std#fde3535ee1f300eef51e9f8d401a551579ce1b01"
+dependencies = [
+ "bitflags",
+ "compiler_builtins",
+ "linux-raw-sys 0.0.46",
+ "rustc-std-workspace-alloc",
+ "rustc-std-workspace-core",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5043,11 +5089,13 @@ dependencies = [
  "libc",
  "miniz_oxide",
  "object 0.26.2",
+ "origin",
  "panic_abort",
  "panic_unwind",
  "profiler_builtins",
  "rand 0.7.3",
  "rustc-demangle",
+ "rustix",
  "std_detect",
  "unwind",
  "wasi 0.11.0+wasi-snapshot-preview1",

@@ -646,7 +646,7 @@ pub fn exit(code: i32) -> ! {
 }
 
 pub fn getpid() -> u32 {
-    unsafe { libc::getpid() as u32 }
+    rustix::process::getpid().as_raw()
 }
 
 pub fn getppid() -> u32 {

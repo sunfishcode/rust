@@ -21,6 +21,8 @@ profiler_builtins = { path = "../profiler_builtins", optional = true }
 unwind = { path = "../unwind" }
 hashbrown = { version = "0.12", default-features = false, features = ['rustc-dep-of-std'] }
 std_detect = { path = "../stdarch/crates/std_detect", default-features = false, features = ['rustc-dep-of-std'] }
+rustix = { git = "https://github.com/bytecodealliance/rustix", branch = "rustc-dep-of-std", default-features = false, features = ['rustc-dep-of-std'] }
+origin = { git = "https://github.com/sunfishcode/mustang", branch = "rustc-dep-of-std", default-features = false, features = ['rustc-dep-of-std'] }
 
 # Dependencies of the `backtrace` crate
 addr2line = { version = "0.16.0", optional = true, default-features = false }
