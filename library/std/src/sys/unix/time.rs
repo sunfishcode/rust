@@ -42,22 +42,18 @@ impl From<libc::timespec> for SystemTime {
     }
 }
 
-impl fmt::Debug for SystemTime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SystemTime")
-            .field("tv_sec", &self.t.tv_sec)
-            .field("tv_nsec", &self.t.tv_nsec)
-            .finish()
-    }
+#[derive(Copy, Clone)]
+struct Timespec {
+    t: rustix::time::Timespec,
 }
 
 impl Timespec {
-    pub const fn zero() -> Timespec {
-        Timespec { tv_sec: 0, tv_nsec: 0 }
+    const fn zero() -> Timespec {
+        Timespec { t: rustix::time::Timespec { tv_sec: 0, tv_nsec: 0 } }
     }
 
     fn new(tv_sec: i64, tv_nsec: i64) -> Timespec {
-        Timespec { tv_sec, tv_nsec }
+        Timespec { t: rustix::time::Timespec { tv_sec, tv_nsec } }
     }
 
     pub fn sub_timespec(&self, other: &Timespec) -> Result<Duration, Duration> {
@@ -261,7 +257,6 @@ mod inner {
 mod inner {
     use crate::fmt;
     use crate::mem::MaybeUninit;
-    use crate::sys::cvt;
     use crate::time::Duration;
 
     use super::{SystemTime, Timespec};
@@ -273,7 +268,7 @@ mod inner {
 
     impl Instant {
         pub fn now() -> Instant {
-            Instant { t: Timespec::now(libc::CLOCK_MONOTONIC) }
+            Instant { t: now(rustix::time::ClockId::Monotonic) }
         }
 
         pub fn checked_sub_instant(&self, other: &Instant) -> Option<Duration> {
@@ -300,7 +295,7 @@ mod inner {
 
     impl SystemTime {
         pub fn now() -> SystemTime {
-            SystemTime { t: Timespec::now(libc::CLOCK_REALTIME) }
+            SystemTime { t: now(rustix::time::ClockId::Realtime) }
         }
     }
 
@@ -311,36 +306,7 @@ mod inner {
 
     impl Timespec {
         pub fn now(clock: clock_t) -> Timespec {
-            // Try to use 64-bit time in preparation for Y2038.
-            #[cfg(all(target_os = "linux", target_env = "gnu", target_pointer_width = "32"))]
-            {
-                use crate::sys::weak::weak;
-
-                // __clock_gettime64 was added to 32-bit arches in glibc 2.34,
-                // and it handles both vDSO calls and ENOSYS fallbacks itself.
-                weak!(fn __clock_gettime64(libc::clockid_t, *mut __timespec64) -> libc::c_int);
-
-                #[repr(C)]
-                struct __timespec64 {
-                    tv_sec: i64,
-                    #[cfg(target_endian = "big")]
-                    _padding: i32,
-                    tv_nsec: i32,
-                    #[cfg(target_endian = "little")]
-                    _padding: i32,
-                }
-
-                if let Some(clock_gettime64) = __clock_gettime64.get() {
-                    let mut t = MaybeUninit::uninit();
-                    cvt(unsafe { clock_gettime64(clock, t.as_mut_ptr()) }).unwrap();
-                    let t = unsafe { t.assume_init() };
-                    return Timespec { tv_sec: t.tv_sec, tv_nsec: t.tv_nsec as i64 };
-                }
-            }
-
-            let mut t = MaybeUninit::uninit();
-            cvt(unsafe { libc::clock_gettime(clock, t.as_mut_ptr()) }).unwrap();
-            Timespec::from(unsafe { t.assume_init() })
+            Timespec { t: rustix::time::clock_gettime(clock) }
         }
     }
 }

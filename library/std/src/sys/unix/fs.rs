@@ -397,19 +397,18 @@ impl FileAttr {
 impl FileAttr {
     #[cfg(not(any(target_os = "vxworks", target_os = "espidf", target_os = "horizon")))]
     pub fn modified(&self) -> io::Result<SystemTime> {
-        #[cfg(target_pointer_width = "32")]
-        cfg_has_statx! {
-            if let Some(mtime) = self.stx_mtime() {
-                return Ok(SystemTime::new(mtime.tv_sec, mtime.tv_nsec as i64));
-            }
-        }
-
-        Ok(SystemTime::new(self.stat.st_mtime as i64, self.stat.st_mtime_nsec as i64))
+        Ok(SystemTime::from(rustix::time::Timespec {
+            tv_sec: self.stat.st_mtime as libc::time_t,
+            tv_nsec: self.stat.st_mtime_nsec as _,
+        }))
     }
 
     #[cfg(any(target_os = "vxworks", target_os = "espidf"))]
     pub fn modified(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::new(self.stat.st_mtime as i64, 0))
+        Ok(SystemTime::from(rustix::time::Timespec {
+            tv_sec: self.stat.st_mtime as libc::time_t,
+            tv_nsec: 0,
+        }))
     }
 
     #[cfg(target_os = "horizon")]
@@ -419,19 +418,18 @@ impl FileAttr {
 
     #[cfg(not(any(target_os = "vxworks", target_os = "espidf", target_os = "horizon")))]
     pub fn accessed(&self) -> io::Result<SystemTime> {
-        #[cfg(target_pointer_width = "32")]
-        cfg_has_statx! {
-            if let Some(atime) = self.stx_atime() {
-                return Ok(SystemTime::new(atime.tv_sec, atime.tv_nsec as i64));
-            }
-        }
-
-        Ok(SystemTime::new(self.stat.st_atime as i64, self.stat.st_atime_nsec as i64))
+        Ok(SystemTime::from(rustix::time::Timespec {
+            tv_sec: self.stat.st_atime as libc::time_t,
+            tv_nsec: self.stat.st_atime_nsec as _,
+        }))
     }
 
     #[cfg(any(target_os = "vxworks", target_os = "espidf"))]
     pub fn accessed(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::new(self.stat.st_atime as i64, 0))
+        Ok(SystemTime::from(rustix::time::Timespec {
+            tv_sec: self.stat.st_atime as libc::time_t,
+            tv_nsec: 0,
+        }))
     }
 
     #[cfg(target_os = "horizon")]
@@ -446,7 +444,10 @@ impl FileAttr {
         target_os = "ios"
     ))]
     pub fn created(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::new(self.stat.st_birthtime as i64, self.stat.st_birthtime_nsec as i64))
+        Ok(SystemTime::from(rustix::time::Timespec {
+            tv_sec: self.stat.st_birthtime as libc::time_t,
+            tv_nsec: self.stat.st_birthtime_nsec as libc::c_long,
+        }))
     }
 
     #[cfg(not(any(
@@ -459,7 +460,10 @@ impl FileAttr {
         cfg_has_statx! {
             if let Some(ext) = &self.statx_extra_fields {
                 return if (ext.stx_mask & libc::STATX_BTIME) != 0 {
-                    Ok(SystemTime::new(ext.stx_btime.tv_sec, ext.stx_btime.tv_nsec as i64))
+                    Ok(SystemTime::from(rustix::time::Timespec {
+                        tv_sec: ext.stx_btime.tv_sec as libc::time_t,
+                        tv_nsec: ext.stx_btime.tv_nsec as _,
+                    }))
                 } else {
                     Err(io::const_io_error!(
                         io::ErrorKind::Uncategorized,
