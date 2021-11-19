@@ -994,8 +994,7 @@ impl DirBuilder {
     }
 
     pub fn mkdir(&self, p: &Path) -> io::Result<()> {
-        let p = cstr(p)?;
-        cvt(unsafe { libc::mkdir(p.as_ptr(), self.mode) })?;
+        rustix::fs::mkdirat(rustix::fs::cwd(), p, rustix::fs::Mode::from_bits_truncate(self.mode))?;
         Ok(())
     }
 
@@ -1175,8 +1174,9 @@ pub fn rename(old: &Path, new: &Path) -> io::Result<()> {
 }
 
 pub fn set_perm(p: &Path, perm: FilePermissions) -> io::Result<()> {
-    let p = cstr(p)?;
-    cvt_r(|| unsafe { libc::chmod(p.as_ptr(), perm.mode) })?;
+    rustix::io::with_retrying(|| {
+        rustix::fs::chmodat(rustix::fs::cwd(), p, rustix::fs::Mode::from_bits_truncate(perm.mode))
+    })?;
     Ok(())
 }
 
@@ -1196,8 +1196,6 @@ pub fn symlink(original: &Path, link: &Path) -> io::Result<()> {
 }
 
 pub fn link(original: &Path, link: &Path) -> io::Result<()> {
-    let original = cstr(original)?;
-    let link = cstr(link)?;
     cfg_if::cfg_if! {
         if #[cfg(any(target_os = "vxworks", target_os = "redox", target_os = "android", target_os = "espidf", target_os = "horizon"))] {
             // VxWorks, Redox and ESP-IDF lack `linkat`, so use `link` instead. POSIX leaves
@@ -1205,6 +1203,8 @@ pub fn link(original: &Path, link: &Path) -> io::Result<()> {
             // `symlink_hard_link` test in library/std/src/fs/tests.rs to check the behavior.
             // Android has `linkat` on newer versions, but we happen to know `link`
             // always has the correct behavior, so it's here as well.
+            let original = cstr(original)?;
+            let link = cstr(link)?;
             cvt(unsafe { libc::link(original.as_ptr(), link.as_ptr()) })?;
         } else if #[cfg(target_os = "macos")] {
             // On MacOS, older versions (<=10.9) lack support for linkat while newer
@@ -1214,6 +1214,8 @@ pub fn link(original: &Path, link: &Path) -> io::Result<()> {
             // meaning it shouldn't follow symlinks.
             weak!(fn linkat(c_int, *const c_char, c_int, *const c_char, c_int) -> c_int);
 
+            let original = cstr(original)?;
+            let link = cstr(link)?;
             if let Some(f) = linkat.get() {
                 cvt(unsafe { f(libc::AT_FDCWD, original.as_ptr(), libc::AT_FDCWD, link.as_ptr(), 0) })?;
             } else {
@@ -1222,7 +1224,7 @@ pub fn link(original: &Path, link: &Path) -> io::Result<()> {
         } else {
             // Where we can, use `linkat` instead of `link`; see the comment above
             // this one for details on why.
-            cvt(unsafe { libc::linkat(libc::AT_FDCWD, original.as_ptr(), libc::AT_FDCWD, link.as_ptr(), 0) })?;
+            rustix::fs::linkat(rustix::fs::cwd(), original, rustix::fs::cwd(), link, AtFlags::empty())?;
         }
     }
     Ok(())
