@@ -12,6 +12,7 @@ use crate::sys::fd::FileDesc;
 use crate::sys::time::SystemTime;
 use crate::sys::{cvt, cvt_r};
 use crate::sys_common::{AsInner, AsInnerMut, FromInner, IntoInner};
+use rustix::fs::AtFlags;
 
 #[cfg(any(
     all(target_os = "linux", target_env = "gnu"),
@@ -73,7 +74,7 @@ use libc::{
     off_t as off64_t, open as open64, stat as stat64,
 };
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "l4re"))]
-use libc::{dirent64, fstat64, ftruncate64, lstat64, off64_t, open64, stat64};
+use libc::{dirent64, fstat64, lstat64, off64_t, open64, stat64};
 
 pub use crate::sys_common::fs::try_exists;
 
@@ -912,26 +913,26 @@ impl File {
     }
 
     pub fn fsync(&self) -> io::Result<()> {
-        cvt_r(|| unsafe { os_fsync(self.as_raw_fd()) })?;
+        rustix::io::with_retrying(|| os_fsync(self))?;
         return Ok(());
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
-        unsafe fn os_fsync(fd: c_int) -> c_int {
-            libc::fcntl(fd, libc::F_FULLFSYNC)
+        fn os_fsync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fcntl_fullfsync(file)
         }
         #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-        unsafe fn os_fsync(fd: c_int) -> c_int {
-            libc::fsync(fd)
+        fn os_fsync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fsync(file)
         }
     }
 
     pub fn datasync(&self) -> io::Result<()> {
-        cvt_r(|| unsafe { os_datasync(self.as_raw_fd()) })?;
+        rustix::io::with_retrying(|| os_datasync(self))?;
         return Ok(());
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
-        unsafe fn os_datasync(fd: c_int) -> c_int {
-            libc::fcntl(fd, libc::F_FULLFSYNC)
+        fn os_datasync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fcntl_fullfsync(file)
         }
         #[cfg(any(
             target_os = "freebsd",
@@ -940,8 +941,8 @@ impl File {
             target_os = "netbsd",
             target_os = "openbsd"
         ))]
-        unsafe fn os_datasync(fd: c_int) -> c_int {
-            libc::fdatasync(fd)
+        fn os_datasync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fdatasync(file)
         }
         #[cfg(not(any(
             target_os = "android",
@@ -952,15 +953,14 @@ impl File {
             target_os = "netbsd",
             target_os = "openbsd"
         )))]
-        unsafe fn os_datasync(fd: c_int) -> c_int {
-            libc::fsync(fd)
+        fn os_datasync(file: &File) -> rustix::io::Result<()> {
+            rustix::fs::fsync(file)
         }
     }
 
     pub fn truncate(&self, size: u64) -> io::Result<()> {
-        let size: off64_t =
-            size.try_into().map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-        cvt_r(|| unsafe { ftruncate64(self.as_raw_fd(), size) }).map(drop)
+        rustix::io::with_retrying(|| rustix::fs::ftruncate(self, size))?;
+        Ok(())
     }
 
     pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
@@ -1197,15 +1197,12 @@ pub fn readdir(p: &Path) -> io::Result<ReadDir> {
 }
 
 pub fn unlink(p: &Path) -> io::Result<()> {
-    let p = cstr(p)?;
-    cvt(unsafe { libc::unlink(p.as_ptr()) })?;
+    rustix::fs::unlinkat(rustix::fs::cwd(), p, AtFlags::empty())?;
     Ok(())
 }
 
 pub fn rename(old: &Path, new: &Path) -> io::Result<()> {
-    let old = cstr(old)?;
-    let new = cstr(new)?;
-    cvt(unsafe { libc::rename(old.as_ptr(), new.as_ptr()) })?;
+    rustix::fs::renameat(rustix::fs::cwd(), old, rustix::fs::cwd(), new)?;
     Ok(())
 }
 
@@ -1216,8 +1213,7 @@ pub fn set_perm(p: &Path, perm: FilePermissions) -> io::Result<()> {
 }
 
 pub fn rmdir(p: &Path) -> io::Result<()> {
-    let p = cstr(p)?;
-    cvt(unsafe { libc::rmdir(p.as_ptr()) })?;
+    rustix::fs::unlinkat(rustix::fs::cwd(), p, AtFlags::REMOVEDIR)?;
     Ok(())
 }
 
