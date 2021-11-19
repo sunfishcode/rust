@@ -12,29 +12,22 @@ use crate::sys::fd::FileDesc;
 use crate::sys::time::SystemTime;
 use crate::sys::{cvt, cvt_r};
 use crate::sys_common::{AsInner, AsInnerMut, FromInner, IntoInner};
+use rustix::ffi::{ZStr, ZString};
 use rustix::fs::AtFlags;
+#[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
+use rustix::fs::StatxFlags;
 
-#[cfg(any(
-    all(target_os = "linux", target_env = "gnu"),
-    target_os = "macos",
-    target_os = "ios",
-))]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use crate::sys::weak::syscall;
 #[cfg(target_os = "macos")]
 use crate::sys::weak::weak;
 
 use libc::{c_int, mode_t};
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "ios",
-    all(target_os = "linux", target_env = "gnu")
-))]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 use libc::c_char;
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
 use libc::dirfd;
-#[cfg(any(target_os = "linux", target_os = "emscripten"))]
-use libc::fstatat64;
 #[cfg(any(
     target_os = "android",
     target_os = "solaris",
@@ -74,7 +67,7 @@ use libc::{
     off_t as off64_t, open as open64, stat as stat64,
 };
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "l4re"))]
-use libc::{dirent64, fstat64, lstat64, off64_t, open64, stat64};
+use libc::{dirent64, lstat64, off64_t, open64};
 
 pub use crate::sys_common::fs::try_exists;
 
@@ -105,7 +98,7 @@ macro_rules! cfg_has_statx {
 cfg_has_statx! {{
     #[derive(Clone)]
     pub struct FileAttr {
-        stat: stat64,
+        stat: rustix::fs::Stat,
         statx_extra_fields: Option<StatxExtraFields>,
     }
 
@@ -113,25 +106,16 @@ cfg_has_statx! {{
     struct StatxExtraFields {
         // This is needed to check if btime is supported by the filesystem.
         stx_mask: u32,
-        stx_btime: libc::statx_timestamp,
-        // With statx, we can overcome 32-bit `time_t` too.
-        #[cfg(target_pointer_width = "32")]
-        stx_atime: libc::statx_timestamp,
-        #[cfg(target_pointer_width = "32")]
-        stx_ctime: libc::statx_timestamp,
-        #[cfg(target_pointer_width = "32")]
-        stx_mtime: libc::statx_timestamp,
-
+        stx_btime: rustix::time::Timespec,
     }
 
-    // We prefer `statx` on Linux if available, which contains file creation time,
-    // as well as 64-bit timestamps of all kinds.
-    // Default `stat64` contains no creation time and may have 32-bit `time_t`.
-    unsafe fn try_statx(
-        fd: c_int,
-        path: *const c_char,
-        flags: i32,
-        mask: u32,
+    // We prefer `statx` on Linux if available, which contains file creation time.
+    // Default `Stat` contains no creation time.
+    unsafe fn try_statx<P: rustix::path::Arg>(
+        fd: BorrowedFd<'_>,
+        path: P,
+        flags: AtFlags,
+        mask: StatxFlags,
     ) -> Option<io::Result<FileAttr>> {
         use crate::sync::atomic::{AtomicU8, Ordering};
 
@@ -141,74 +125,58 @@ cfg_has_statx! {{
         // 1: Not available
         // 2: Available
         static STATX_STATE: AtomicU8 = AtomicU8::new(0);
-        syscall! {
-            fn statx(
-                fd: c_int,
-                pathname: *const c_char,
-                flags: c_int,
-                mask: libc::c_uint,
-                statxbuf: *mut libc::statx
-            ) -> c_int
-        }
 
         match STATX_STATE.load(Ordering::Relaxed) {
             0 => {
-                // It is a trick to call `statx` with null pointers to check if the syscall
-                // is available. According to the manual, it is expected to fail with EFAULT.
-                // We do this mainly for performance, since it is nearly hundreds times
-                // faster than a normal successful call.
-                let err = cvt(statx(0, ptr::null(), 0, libc::STATX_ALL, ptr::null_mut()))
-                    .err()
-                    .and_then(|e| e.raw_os_error());
+                // It is a trick to call `statx` with an empty path to check if the syscall
+                // is available. According to the manual, it is expected to fail with ENOENT.
+                let res = rustix::fs::statx(rustix::fs::cwd(), rustix::zstr!(""), AtFlags::empty(), StatxFlags::ALL);
                 // We don't check `err == Some(libc::ENOSYS)` because the syscall may be limited
                 // and returns `EPERM`. Listing all possible errors seems not a good idea.
                 // See: https://github.com/rust-lang/rust/issues/65662
-                if err != Some(libc::EFAULT) {
+                if let Err(rustix::io::Error::NOENT) = res {
+                    STATX_STATE.store(2, Ordering::Relaxed);
+                } else {
                     STATX_STATE.store(1, Ordering::Relaxed);
                     return None;
                 }
-                STATX_STATE.store(2, Ordering::Relaxed);
             }
             1 => return None,
             _ => {}
         }
 
-        let mut buf: libc::statx = mem::zeroed();
-        if let Err(err) = cvt(statx(fd, path, flags, mask, &mut buf)) {
-            return Some(Err(err));
-        }
+        let buf = match rustix::fs::statx(&fd, path, flags, mask) {
+            Ok(buf) => buf,
+            Err(e) => return Some(Err(e.into())),
+        };
 
-        // We cannot fill `stat64` exhaustively because of private padding fields.
-        let mut stat: stat64 = mem::zeroed();
+        // We cannot fill `Stat` exhaustively because of private padding fields.
+        let mut stat: rustix::fs::Stat = mem::zeroed();
         // `c_ulong` on gnu-mips, `dev_t` otherwise
-        stat.st_dev = libc::makedev(buf.stx_dev_major, buf.stx_dev_minor) as _;
+        stat.st_dev = rustix::fs::makedev(buf.stx_dev_major, buf.stx_dev_minor) as _;
         stat.st_ino = buf.stx_ino as libc::ino64_t;
         stat.st_nlink = buf.stx_nlink as libc::nlink_t;
         stat.st_mode = buf.stx_mode as libc::mode_t;
         stat.st_uid = buf.stx_uid as libc::uid_t;
         stat.st_gid = buf.stx_gid as libc::gid_t;
-        stat.st_rdev = libc::makedev(buf.stx_rdev_major, buf.stx_rdev_minor) as _;
+        stat.st_rdev = rustix::fs::makedev(buf.stx_rdev_major, buf.stx_rdev_minor) as _;
         stat.st_size = buf.stx_size as off64_t;
         stat.st_blksize = buf.stx_blksize as libc::blksize_t;
         stat.st_blocks = buf.stx_blocks as libc::blkcnt64_t;
-        stat.st_atime = buf.stx_atime.tv_sec as libc::time_t;
+        stat.st_atime = buf.stx_atime.tv_sec as u64;
         // `i64` on gnu-x86_64-x32, `c_ulong` otherwise.
         stat.st_atime_nsec = buf.stx_atime.tv_nsec as _;
-        stat.st_mtime = buf.stx_mtime.tv_sec as libc::time_t;
+        stat.st_mtime = buf.stx_mtime.tv_sec as u64;
         stat.st_mtime_nsec = buf.stx_mtime.tv_nsec as _;
-        stat.st_ctime = buf.stx_ctime.tv_sec as libc::time_t;
+        stat.st_ctime = buf.stx_ctime.tv_sec as u64;
         stat.st_ctime_nsec = buf.stx_ctime.tv_nsec as _;
 
         let extra = StatxExtraFields {
             stx_mask: buf.stx_mask,
-            stx_btime: buf.stx_btime,
-            // Store full times to avoid 32-bit `time_t` truncation.
-            #[cfg(target_pointer_width = "32")]
-            stx_atime: buf.stx_atime,
-            #[cfg(target_pointer_width = "32")]
-            stx_ctime: buf.stx_ctime,
-            #[cfg(target_pointer_width = "32")]
-            stx_mtime: buf.stx_mtime,
+            stx_btime: rustix::time::Timespec {
+                tv_sec: buf.stx_btime.tv_sec,
+                tv_nsec: buf.stx_btime.tv_nsec as _,
+            }
         };
 
         Some(Ok(FileAttr { stat, statx_extra_fields: Some(extra) }))
@@ -217,7 +185,7 @@ cfg_has_statx! {{
 } else {
     #[derive(Clone)]
     pub struct FileAttr {
-        stat: stat64,
+        stat: rustix::fs::Stat,
     }
 }}
 
@@ -324,7 +292,7 @@ pub struct DirBuilder {
 
 cfg_has_statx! {{
     impl FileAttr {
-        fn from_stat64(stat: stat64) -> Self {
+        fn from_stat(stat: rustix::fs::Stat) -> Self {
             Self { stat, statx_extra_fields: None }
         }
 
@@ -360,7 +328,7 @@ cfg_has_statx! {{
     }
 } else {
     impl FileAttr {
-        fn from_stat64(stat: stat64) -> Self {
+        fn from_stat(stat: rustix::fs::Stat) -> Self {
             Self { stat }
         }
     }
@@ -482,8 +450,8 @@ impl FileAttr {
     }
 }
 
-impl AsInner<stat64> for FileAttr {
-    fn as_inner(&self) -> &stat64 {
+impl AsInner<rustix::fs::Stat> for FileAttr {
+    fn as_inner(&self) -> &rustix::fs::Stat {
         &self.stat
     }
 }
@@ -661,18 +629,21 @@ impl DirEntry {
 
         cfg_has_statx! {
             if let Some(ret) = unsafe { try_statx(
-                fd,
+                BorrowedFd::borrow_raw_fd(fd),
                 name,
-                libc::AT_SYMLINK_NOFOLLOW | libc::AT_STATX_SYNC_AS_STAT,
-                libc::STATX_ALL,
+                AtFlags::SYMLINK_NOFOLLOW | AtFlags::STATX_SYNC_AS_STAT,
+                StatxFlags::ALL,
             ) } {
                 return ret;
             }
         }
 
-        let mut stat: stat64 = unsafe { mem::zeroed() };
-        cvt(unsafe { fstatat64(fd, name, &mut stat, libc::AT_SYMLINK_NOFOLLOW) })?;
-        Ok(FileAttr::from_stat64(stat))
+        let stat = rustix::fs::statat(
+            unsafe { &BorrowedFd::borrow_raw_fd(fd) },
+            name,
+            AtFlags::SYMLINK_NOFOLLOW,
+        )?;
+        Ok(FileAttr::from_stat(stat))
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "emscripten", target_os = "android")))]
@@ -894,22 +865,19 @@ impl File {
     }
 
     pub fn file_attr(&self) -> io::Result<FileAttr> {
-        let fd = self.as_raw_fd();
-
         cfg_has_statx! {
             if let Some(ret) = unsafe { try_statx(
-                fd,
-                b"\0" as *const _ as *const c_char,
-                libc::AT_EMPTY_PATH | libc::AT_STATX_SYNC_AS_STAT,
-                libc::STATX_ALL,
+                self.as_fd(),
+                rustix::zstr!(""),
+                AtFlags::EMPTY_PATH | AtFlags::STATX_SYNC_AS_STAT,
+                StatxFlags::ALL,
             ) } {
                 return ret;
             }
         }
 
-        let mut stat: stat64 = unsafe { mem::zeroed() };
-        cvt(unsafe { fstat64(fd, &mut stat) })?;
-        Ok(FileAttr::from_stat64(stat))
+        let stat = rustix::fs::fstat(self)?;
+        Ok(FileAttr::from_stat(stat))
     }
 
     pub fn fsync(&self) -> io::Result<()> {
@@ -1218,36 +1186,12 @@ pub fn rmdir(p: &Path) -> io::Result<()> {
 }
 
 pub fn readlink(p: &Path) -> io::Result<PathBuf> {
-    let c_path = cstr(p)?;
-    let p = c_path.as_ptr();
-
-    let mut buf = Vec::with_capacity(256);
-
-    loop {
-        let buf_read =
-            cvt(unsafe { libc::readlink(p, buf.as_mut_ptr() as *mut _, buf.capacity()) })? as usize;
-
-        unsafe {
-            buf.set_len(buf_read);
-        }
-
-        if buf_read != buf.capacity() {
-            buf.shrink_to_fit();
-
-            return Ok(PathBuf::from(OsString::from_vec(buf)));
-        }
-
-        // Trigger the internal buffer resizing logic of `Vec` by requiring
-        // more space than the current capacity. The length is guaranteed to be
-        // the same as the capacity due to the if statement above.
-        buf.reserve(1);
-    }
+    let path = rustix::fs::readlinkat(rustix::fs::cwd(), p, ZString::default())?;
+    Ok(OsString::from_vec(path.into_bytes()).into())
 }
 
 pub fn symlink(original: &Path, link: &Path) -> io::Result<()> {
-    let original = cstr(original)?;
-    let link = cstr(link)?;
-    cvt(unsafe { libc::symlink(original.as_ptr(), link.as_ptr()) })?;
+    rustix::fs::symlinkat(original, rustix::fs::cwd(), link)?;
     Ok(())
 }
 
@@ -1285,41 +1229,35 @@ pub fn link(original: &Path, link: &Path) -> io::Result<()> {
 }
 
 pub fn stat(p: &Path) -> io::Result<FileAttr> {
-    let p = cstr(p)?;
-
     cfg_has_statx! {
         if let Some(ret) = unsafe { try_statx(
-            libc::AT_FDCWD,
-            p.as_ptr(),
-            libc::AT_STATX_SYNC_AS_STAT,
-            libc::STATX_ALL,
+            rustix::fs::cwd(),
+            p,
+            AtFlags::STATX_SYNC_AS_STAT,
+            StatxFlags::ALL,
         ) } {
             return ret;
         }
     }
 
-    let mut stat: stat64 = unsafe { mem::zeroed() };
-    cvt(unsafe { stat64(p.as_ptr(), &mut stat) })?;
-    Ok(FileAttr::from_stat64(stat))
+    let stat = rustix::fs::statat(rustix::fs::cwd(), p, AtFlags::empty())?;
+    Ok(FileAttr::from_stat(stat))
 }
 
 pub fn lstat(p: &Path) -> io::Result<FileAttr> {
-    let p = cstr(p)?;
-
     cfg_has_statx! {
         if let Some(ret) = unsafe { try_statx(
-            libc::AT_FDCWD,
-            p.as_ptr(),
-            libc::AT_SYMLINK_NOFOLLOW | libc::AT_STATX_SYNC_AS_STAT,
-            libc::STATX_ALL,
+            rustix::fs::cwd(),
+            p,
+            AtFlags::SYMLINK_NOFOLLOW | AtFlags::STATX_SYNC_AS_STAT,
+            StatxFlags::ALL,
         ) } {
             return ret;
         }
     }
 
-    let mut stat: stat64 = unsafe { mem::zeroed() };
-    cvt(unsafe { lstat64(p.as_ptr(), &mut stat) })?;
-    Ok(FileAttr::from_stat64(stat))
+    let stat = rustix::fs::statat(rustix::fs::cwd(), p, AtFlags::SYMLINK_NOFOLLOW)?;
+    Ok(FileAttr::from_stat(stat))
 }
 
 pub fn canonicalize(p: &Path) -> io::Result<PathBuf> {
