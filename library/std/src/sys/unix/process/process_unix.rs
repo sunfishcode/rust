@@ -278,17 +278,31 @@ impl Command {
         stdio: ChildPipes,
         maybe_envp: Option<&CStringArray>,
     ) -> Result<!, io::Error> {
-        use crate::sys::{self, cvt_r};
+        use crate::os::unix::io::BorrowedFd;
+        use crate::sys;
+        use rustix::io::with_retrying;
 
+        // Acquire owning handles for the stdio streams so that we can
+        // overwrite them with `dup2`.
+        let stdin = rustix::io::take_stdin();
+        let stdout = rustix::io::take_stdout();
+        let stderr = rustix::io::take_stderr();
+
+        // Overwrite the stdio streams with `dup2`.
         if let Some(fd) = stdio.stdin.fd() {
-            cvt_r(|| libc::dup2(fd, libc::STDIN_FILENO))?;
+            with_retrying(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &stdin))?;
         }
         if let Some(fd) = stdio.stdout.fd() {
-            cvt_r(|| libc::dup2(fd, libc::STDOUT_FILENO))?;
+            with_retrying(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &stdout))?;
         }
         if let Some(fd) = stdio.stderr.fd() {
-            cvt_r(|| libc::dup2(fd, libc::STDERR_FILENO))?;
+            with_retrying(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &stderr))?;
         }
+
+        // Release ownership of the stdio streams so that we leave them open.
+        mem::forget(stdin);
+        mem::forget(stdout);
+        mem::forget(stderr);
 
         #[cfg(not(target_os = "l4re"))]
         {
