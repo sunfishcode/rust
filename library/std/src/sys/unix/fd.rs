@@ -6,8 +6,11 @@ mod tests;
 use crate::cmp;
 use crate::io::{self, IoSlice, IoSliceMut, Read, ReadBuf};
 use crate::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
-use crate::sys::cvt;
 use crate::sys_common::{AsInner, FromInner, IntoInner};
+
+use rustix::fs::FdFlags;
+#[cfg(not(target_os = "linux"))]
+use rustix::fs::OFlags;
 
 #[cfg(any(
     target_os = "android",
@@ -75,31 +78,21 @@ const fn max_iov() -> usize {
 
 impl FileDesc {
     pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {
-        let ret = cvt(unsafe {
-            libc::read(
-                self.as_raw_fd(),
-                buf.as_mut_ptr() as *mut libc::c_void,
-                cmp::min(buf.len(), READ_LIMIT),
-            )
-        })?;
-        Ok(ret as usize)
+        let ret = rustix::io::read(self, buf)?;
+        Ok(ret)
     }
 
     #[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
     pub fn read_vectored(&self, bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize> {
-        let ret = cvt(unsafe {
-            libc::readv(
-                self.as_raw_fd(),
-                bufs.as_ptr() as *const libc::iovec,
-                cmp::min(bufs.len(), max_iov()) as libc::c_int,
-            )
-        })?;
-        Ok(ret as usize)
+        let ret = rustix::io::readv(self, unsafe { crate::mem::transmute(bufs) })?;
+        Ok(ret)
     }
 
     #[cfg(any(target_os = "espidf", target_os = "horizon"))]
     pub fn read_vectored(&self, bufs: &mut [IoSliceMut<'_>]) -> io::Result<usize> {
-        return crate::io::default_read_vectored(|b| self.read(b), bufs);
+        return crate::io::default_read_vectored(|b| self.read(b), unsafe {
+            crate::mem::transmute(bufs)
+        });
     }
 
     #[inline]
@@ -113,20 +106,8 @@ impl FileDesc {
     }
 
     pub fn read_at(&self, buf: &mut [u8], offset: u64) -> io::Result<usize> {
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
-        use libc::pread as pread64;
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        use libc::pread64;
-
-        unsafe {
-            cvt(pread64(
-                self.as_raw_fd(),
-                buf.as_mut_ptr() as *mut libc::c_void,
-                cmp::min(buf.len(), READ_LIMIT),
-                offset as off64_t,
-            ))
-            .map(|n| n as usize)
-        }
+        let ret = rustix::io::pread(self, buf, offset)?;
+        Ok(ret)
     }
 
     pub fn read_buf(&self, buf: &mut ReadBuf<'_>) -> io::Result<()> {
@@ -147,31 +128,21 @@ impl FileDesc {
     }
 
     pub fn write(&self, buf: &[u8]) -> io::Result<usize> {
-        let ret = cvt(unsafe {
-            libc::write(
-                self.as_raw_fd(),
-                buf.as_ptr() as *const libc::c_void,
-                cmp::min(buf.len(), READ_LIMIT),
-            )
-        })?;
-        Ok(ret as usize)
+        let ret = rustix::io::write(self, buf)?;
+        Ok(ret)
     }
 
     #[cfg(not(any(target_os = "espidf", target_os = "horizon")))]
     pub fn write_vectored(&self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-        let ret = cvt(unsafe {
-            libc::writev(
-                self.as_raw_fd(),
-                bufs.as_ptr() as *const libc::iovec,
-                cmp::min(bufs.len(), max_iov()) as libc::c_int,
-            )
-        })?;
-        Ok(ret as usize)
+        let ret = rustix::io::writev(self, unsafe { crate::mem::transmute(bufs) })?;
+        Ok(ret)
     }
 
     #[cfg(any(target_os = "espidf", target_os = "horizon"))]
     pub fn write_vectored(&self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
-        return crate::io::default_write_vectored(|b| self.write(b), bufs);
+        return crate::io::default_write_vectored(|b| self.write(b), unsafe {
+            crate::mem::transmute(bufs)
+        });
     }
 
     #[inline]
@@ -180,25 +151,13 @@ impl FileDesc {
     }
 
     pub fn write_at(&self, buf: &[u8], offset: u64) -> io::Result<usize> {
-        #[cfg(not(any(target_os = "linux", target_os = "android")))]
-        use libc::pwrite as pwrite64;
-        #[cfg(any(target_os = "linux", target_os = "android"))]
-        use libc::pwrite64;
-
-        unsafe {
-            cvt(pwrite64(
-                self.as_raw_fd(),
-                buf.as_ptr() as *const libc::c_void,
-                cmp::min(buf.len(), READ_LIMIT),
-                offset as off64_t,
-            ))
-            .map(|n| n as usize)
-        }
+        let ret = rustix::io::pwrite(self, buf, offset)?;
+        Ok(ret)
     }
 
     #[cfg(target_os = "linux")]
     pub fn get_cloexec(&self) -> io::Result<bool> {
-        unsafe { Ok((cvt(libc::fcntl(self.as_raw_fd(), libc::F_GETFD))? & libc::FD_CLOEXEC) != 0) }
+        Ok(rustix::fs::fcntl_getfd(self)?.contains(FdFlags::CLOEXEC))
     }
 
     #[cfg(not(any(
@@ -214,10 +173,8 @@ impl FileDesc {
         target_os = "vxworks"
     )))]
     pub fn set_cloexec(&self) -> io::Result<()> {
-        unsafe {
-            cvt(libc::ioctl(self.as_raw_fd(), libc::FIOCLEX))?;
-            Ok(())
-        }
+        rustix::io::ioctl_fioclex(self)?;
+        Ok(())
     }
     #[cfg(any(
         all(target_env = "newlib", not(any(target_os = "espidf", target_os = "horizon"))),
@@ -232,14 +189,12 @@ impl FileDesc {
         target_os = "vxworks"
     ))]
     pub fn set_cloexec(&self) -> io::Result<()> {
-        unsafe {
-            let previous = cvt(libc::fcntl(self.as_raw_fd(), libc::F_GETFD))?;
-            let new = previous | libc::FD_CLOEXEC;
-            if new != previous {
-                cvt(libc::fcntl(self.as_raw_fd(), libc::F_SETFD, new))?;
-            }
-            Ok(())
+        let previous = rustix::fs::fcntl_getfd(self)?;
+        let new = previous | FdFlags::CLOEXEC;
+        if new != previous {
+            rustix::fs::fcntl_setfd(self, new)?;
         }
+        Ok(())
     }
     #[cfg(any(target_os = "espidf", target_os = "horizon"))]
     pub fn set_cloexec(&self) -> io::Result<()> {
@@ -250,24 +205,21 @@ impl FileDesc {
 
     #[cfg(target_os = "linux")]
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        unsafe {
-            let v = nonblocking as libc::c_int;
-            cvt(libc::ioctl(self.as_raw_fd(), libc::FIONBIO, &v))?;
-            Ok(())
-        }
+        rustix::io::ioctl_fionbio(self, nonblocking)?;
+        Ok(())
     }
 
     #[cfg(not(target_os = "linux"))]
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
         unsafe {
-            let previous = cvt(libc::fcntl(self.as_raw_fd(), libc::F_GETFL))?;
+            let previous = rustix::fs::fcntl_getfl(self)?;
             let new = if nonblocking {
-                previous | libc::O_NONBLOCK
+                previous | OFlags::NONBLOCK;
             } else {
-                previous & !libc::O_NONBLOCK
+                previous & !OFlags::NONBLOCK;
             };
             if new != previous {
-                cvt(libc::fcntl(self.as_raw_fd(), libc::F_SETFL, new))?;
+                rustix::fcntl_setfl(self, new)?;
             }
             Ok(())
         }
