@@ -12,10 +12,6 @@ use crate::sys::fd::FileDesc;
 use crate::sys::time::SystemTime;
 use crate::sys::{cvt, cvt_r};
 use crate::sys_common::{AsInner, AsInnerMut, FromInner, IntoInner};
-use rustix::ffi::{ZStr, ZString};
-use rustix::fs::AtFlags;
-#[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
-use rustix::fs::StatxFlags;
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use crate::sys::weak::syscall;
@@ -26,6 +22,8 @@ use libc::{c_int, mode_t};
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use libc::c_char;
+#[cfg(target_os = "android")]
+use libc::dirent as dirent64;
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
 use libc::dirfd;
 #[cfg(any(
@@ -67,9 +65,12 @@ use libc::{
     off_t as off64_t, open as open64, stat as stat64,
 };
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "l4re"))]
-use libc::{dirent64, lstat64, off64_t, open64};
-
-pub use crate::sys_common::fs::try_exists;
+use libc::{dirent64, lstat64, off64_t};
+pub use crate::sys_common::fs::{remove_dir_all, try_exists};
+use rustix::ffi::{ZStr, ZString};
+#[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
+use rustix::fs::StatxFlags;
+use rustix::fs::{AtFlags, Mode, OFlags};
 
 pub struct File(FileDesc);
 
@@ -846,22 +847,15 @@ impl OpenOptions {
 }
 
 impl File {
-    pub fn open(path: &Path, opts: &OpenOptions) -> io::Result<File> {
-        let path = cstr(path)?;
-        File::open_c(&path, opts)
-    }
-
-    pub fn open_c(path: &CStr, opts: &OpenOptions) -> io::Result<File> {
-        let flags = libc::O_CLOEXEC
-            | opts.get_access_mode()?
-            | opts.get_creation_mode()?
-            | (opts.custom_flags as c_int & !libc::O_ACCMODE);
-        // The third argument of `open64` is documented to have type `mode_t`. On
-        // some platforms (like macOS, where `open64` is actually `open`), `mode_t` is `u16`.
-        // However, since this is a variadic function, C integer promotion rules mean that on
-        // the ABI level, this still gets passed as `c_int` (aka `u32` on Unix platforms).
-        let fd = cvt_r(|| unsafe { open64(path.as_ptr(), flags, opts.mode as c_int) })?;
-        Ok(File(unsafe { FileDesc::from_raw_fd(fd) }))
+    pub fn open<P: rustix::path::Arg + Copy>(path: P, opts: &OpenOptions) -> io::Result<File> {
+        let flags = OFlags::CLOEXEC
+            | OFlags::from_bits_truncate(opts.get_access_mode()? as _)
+            | OFlags::from_bits_truncate(opts.get_creation_mode()? as _)
+            | (OFlags::from_bits_truncate(opts.custom_flags as _) & !OFlags::ACCMODE);
+        let fd = rustix::io::with_retrying(|| {
+            rustix::fs::openat(rustix::fs::cwd(), path, flags, Mode::from_bits_truncate(opts.mode))
+        })?;
+        Ok(File(FileDesc::from_inner(fd)))
     }
 
     pub fn file_attr(&self) -> io::Result<FileAttr> {
