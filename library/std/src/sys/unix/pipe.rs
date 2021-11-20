@@ -1,9 +1,9 @@
 use crate::io::{self, IoSlice, IoSliceMut};
-use crate::mem;
 use crate::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, RawFd};
 use crate::sys::fd::FileDesc;
-use crate::sys::{cvt, cvt_r};
-use crate::sys_common::IntoInner;
+use crate::sys_common::{FromInner, IntoInner};
+
+use rustix::io::{PipeFlags, PollFd, PollFlags};
 
 ////////////////////////////////////////////////////////////////////////////////
 // Anonymous pipes
@@ -12,11 +12,9 @@ use crate::sys_common::IntoInner;
 pub struct AnonPipe(FileDesc);
 
 pub fn anon_pipe() -> io::Result<(AnonPipe, AnonPipe)> {
-    let mut fds = [0; 2];
-
     // The only known way right now to create atomically set the CLOEXEC flag is
-    // to use the `pipe2` syscall. This was added to Linux in 2.6.27, glibc 2.9
-    // and musl 0.9.3, and some other targets also have it.
+    // to use the `pipe2` syscall. This was added to Linux in 2.6.27, and some
+    // other targets also have it.
     cfg_if::cfg_if! {
         if #[cfg(any(
             target_os = "dragonfly",
@@ -26,20 +24,15 @@ pub fn anon_pipe() -> io::Result<(AnonPipe, AnonPipe)> {
             target_os = "openbsd",
             target_os = "redox"
         ))] {
-            unsafe {
-                cvt(libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC))?;
-                Ok((AnonPipe(FileDesc::from_raw_fd(fds[0])), AnonPipe(FileDesc::from_raw_fd(fds[1]))))
-            }
+            let (fds0, fds1) = rustix::io::pipe_with(PipeFlags::CLOEXEC)?;
+            Ok((AnonPipe(FileDesc::from_inner(fds0)), AnonPipe(FileDesc::from_inner(fds1))))
         } else {
-            unsafe {
-                cvt(libc::pipe(fds.as_mut_ptr()))?;
-
-                let fd0 = FileDesc::from_raw_fd(fds[0]);
-                let fd1 = FileDesc::from_raw_fd(fds[1]);
-                fd0.set_cloexec()?;
-                fd1.set_cloexec()?;
-                Ok((AnonPipe(fd0), AnonPipe(fd1)))
-            }
+            let (fds0, fds1) = rustix::io::pipe()?;
+            let fd0 = FileDesc::from_inner(fds0);
+            let fd1 = FileDesc::from_inner(fds1);
+            fd0.set_cloexec()?;
+            fd1.set_cloexec()?;
+            Ok((AnonPipe(fd0), AnonPipe(fd1)))
         }
     }
 }
@@ -86,20 +79,16 @@ pub fn read2(p1: AnonPipe, v1: &mut Vec<u8>, p2: AnonPipe, v2: &mut Vec<u8>) -> 
     p1.set_nonblocking(true)?;
     p2.set_nonblocking(true)?;
 
-    let mut fds: [libc::pollfd; 2] = unsafe { mem::zeroed() };
-    fds[0].fd = p1.as_raw_fd();
-    fds[0].events = libc::POLLIN;
-    fds[1].fd = p2.as_raw_fd();
-    fds[1].events = libc::POLLIN;
+    let mut fds = [PollFd::new(&p1, PollFlags::IN), PollFd::new(&p2, PollFlags::IN)];
     loop {
         // wait for either pipe to become readable using `poll`
-        cvt_r(|| unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) })?;
+        rustix::io::with_retrying(|| rustix::io::poll(&mut fds, -1))?;
 
-        if fds[0].revents != 0 && read(&p1, v1)? {
+        if !fds[0].revents().is_empty() && read(&p1, v1)? {
             p2.set_nonblocking(false)?;
             return p2.read_to_end(v2).map(drop);
         }
-        if fds[1].revents != 0 && read(&p2, v2)? {
+        if !fds[1].revents().is_empty() && read(&p2, v2)? {
             p1.set_nonblocking(false)?;
             return p1.read_to_end(v1).map(drop);
         }
@@ -114,8 +103,8 @@ pub fn read2(p1: AnonPipe, v1: &mut Vec<u8>, p2: AnonPipe, v2: &mut Vec<u8>) -> 
         match fd.read_to_end(dst) {
             Ok(_) => Ok(true),
             Err(e) => {
-                if e.raw_os_error() == Some(libc::EWOULDBLOCK)
-                    || e.raw_os_error() == Some(libc::EAGAIN)
+                if e.raw_os_error() == Some(rustix::io::Error::WOULDBLOCK.raw_os_error())
+                    || e.raw_os_error() == Some(rustix::io::Error::AGAIN.raw_os_error())
                 {
                     Ok(false)
                 } else {
