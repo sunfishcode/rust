@@ -107,11 +107,7 @@ impl Condvar {
         target_os = "horizon"
     )))]
     pub unsafe fn wait_timeout(&self, mutex: &Mutex, dur: Duration) -> bool {
-        use crate::mem;
-
-        let mut now: libc::timespec = mem::zeroed();
-        let r = libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut now);
-        assert_eq!(r, 0);
+        let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
 
         // Nanosecond calculations can't overflow because both values are below 1e9.
         let nsec = dur.subsec_nanos() + now.tv_nsec as u32;

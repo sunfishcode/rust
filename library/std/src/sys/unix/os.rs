@@ -136,29 +136,8 @@ pub fn getcwd() -> io::Result<PathBuf> {
 
 #[cfg(not(target_os = "espidf"))]
 pub fn getcwd() -> io::Result<PathBuf> {
-    let mut buf = Vec::with_capacity(512);
-    loop {
-        unsafe {
-            let ptr = buf.as_mut_ptr() as *mut libc::c_char;
-            if !libc::getcwd(ptr, buf.capacity()).is_null() {
-                let len = CStr::from_ptr(buf.as_ptr() as *const libc::c_char).to_bytes().len();
-                buf.set_len(len);
-                buf.shrink_to_fit();
-                return Ok(PathBuf::from(OsString::from_vec(buf)));
-            } else {
-                let error = io::Error::last_os_error();
-                if error.raw_os_error() != Some(libc::ERANGE) {
-                    return Err(error);
-                }
-            }
-
-            // Trigger the internal buffer resizing logic of `Vec` by requiring
-            // more space than the current capacity.
-            let cap = buf.capacity();
-            buf.set_len(cap);
-            buf.reserve(1);
-        }
-    }
+    let buf = rustix::process::getcwd(Vec::new())?;
+    Ok(PathBuf::from(OsString::from_vec(buf.into_bytes())))
 }
 
 #[cfg(target_os = "espidf")]
@@ -168,11 +147,7 @@ pub fn chdir(p: &path::Path) -> io::Result<()> {
 
 #[cfg(not(target_os = "espidf"))]
 pub fn chdir(p: &path::Path) -> io::Result<()> {
-    let p: &OsStr = p.as_ref();
-    let p = CString::new(p.as_bytes())?;
-    if unsafe { libc::chdir(p.as_ptr()) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    rustix::process::chdir(p)?;
     Ok(())
 }
 
@@ -328,7 +303,12 @@ pub fn current_exe() -> io::Result<PathBuf> {
 #[cfg(target_os = "openbsd")]
 pub fn current_exe() -> io::Result<PathBuf> {
     unsafe {
-        let mut mib = [libc::CTL_KERN, libc::KERN_PROC_ARGS, libc::getpid(), libc::KERN_PROC_ARGV];
+        let mut mib = [
+            libc::CTL_KERN,
+            libc::KERN_PROC_ARGS,
+            rustix::process::getpid().as_raw(),
+            libc::KERN_PROC_ARGV,
+        ];
         let mib = mib.as_mut_ptr();
         let mut argv_len = 0;
         cvt(libc::sysctl(mib, 4, ptr::null_mut(), &mut argv_len, ptr::null_mut(), 0))?;
@@ -579,7 +559,7 @@ pub fn unsetenv(n: &OsStr) -> io::Result<()> {
 
 #[cfg(not(target_os = "espidf"))]
 pub fn page_size() -> usize {
-    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+    rustix::process::page_size()
 }
 
 pub fn temp_dir() -> PathBuf {
@@ -625,7 +605,7 @@ pub fn home_dir() -> Option<PathBuf> {
         let mut passwd: libc::passwd = mem::zeroed();
         let mut result = ptr::null_mut();
         match libc::getpwuid_r(
-            libc::getuid(),
+            rustix::process::getuid().as_raw(),
             &mut passwd,
             buf.as_mut_ptr(),
             buf.capacity(),
@@ -650,7 +630,7 @@ pub fn getpid() -> u32 {
 }
 
 pub fn getppid() -> u32 {
-    unsafe { libc::getppid() as u32 }
+    rustix::process::getppid().as_raw()
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]

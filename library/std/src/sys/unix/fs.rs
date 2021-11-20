@@ -20,6 +20,7 @@ use crate::sys::weak::weak;
 
 use libc::{c_int, mode_t};
 
+pub use crate::sys_common::fs::{remove_dir_all, try_exists};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use libc::c_char;
 #[cfg(target_os = "android")]
@@ -66,7 +67,6 @@ use libc::{
 };
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "l4re"))]
 use libc::{dirent64, lstat64, off64_t};
-pub use crate::sys_common::fs::{remove_dir_all, try_exists};
 use rustix::ffi::{ZStr, ZString};
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
 use rustix::fs::StatxFlags;

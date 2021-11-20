@@ -39,16 +39,13 @@ impl Drop for Handler {
 ))]
 mod imp {
     use super::Handler;
-    use crate::io;
     use crate::mem;
     use crate::ptr;
     use crate::thread;
 
-    use libc::MAP_FAILED;
-    use libc::{mmap, munmap};
+    use libc::SIGSEGV;
     use libc::{sigaction, sighandler_t, SA_ONSTACK, SA_SIGINFO, SIGBUS, SIG_DFL};
     use libc::{sigaltstack, SIGSTKSZ, SS_DISABLE};
-    use libc::{MAP_ANON, MAP_PRIVATE, PROT_NONE, PROT_READ, PROT_WRITE, SIGSEGV};
 
     use crate::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
     use crate::sys::unix::os::page_size;
@@ -127,22 +124,24 @@ mod imp {
     }
 
     unsafe fn get_stackp() -> *mut libc::c_void {
+        use rustix::io::{MapFlags, MprotectFlags, ProtFlags};
+
         // OpenBSD requires this flag for stack mapping
         // otherwise the said mapping will fail as a no-op on most systems
         // and has a different meaning on FreeBSD
         #[cfg(any(target_os = "openbsd", target_os = "netbsd", target_os = "linux",))]
-        let flags = MAP_PRIVATE | MAP_ANON | libc::MAP_STACK;
+        let flags = MapFlags::PRIVATE | MapFlags::STACK;
         #[cfg(not(any(target_os = "openbsd", target_os = "netbsd", target_os = "linux",)))]
-        let flags = MAP_PRIVATE | MAP_ANON;
-        let stackp =
-            mmap(ptr::null_mut(), SIGSTKSZ + page_size(), PROT_READ | PROT_WRITE, flags, -1, 0);
-        if stackp == MAP_FAILED {
-            panic!("failed to allocate an alternative stack: {}", io::Error::last_os_error());
-        }
-        let guard_result = libc::mprotect(stackp, page_size(), PROT_NONE);
-        if guard_result != 0 {
-            panic!("failed to set up alternative stack guard page: {}", io::Error::last_os_error());
-        }
+        let flags = MapFlags::PRIVATE;
+        let stackp = rustix::io::mmap_anonymous(
+            ptr::null_mut(),
+            SIGSTKSZ + page_size(),
+            ProtFlags::READ | ProtFlags::WRITE,
+            flags,
+        )
+        .expect("failed to allocate an alternative stack");
+        rustix::io::mprotect(stackp, page_size(), MprotectFlags::empty())
+            .expect("failed to set up alternative stack guard page");
         stackp.add(page_size())
     }
 
@@ -180,7 +179,7 @@ mod imp {
             sigaltstack(&stack, ptr::null_mut());
             // We know from `get_stackp` that the alternate stack we installed is part of a mapping
             // that started one page earlier, so walk back a page and unmap from there.
-            munmap(data.sub(page_size()), SIGSTKSZ + page_size());
+            rustix::io::munmap(data.sub(page_size()), SIGSTKSZ + page_size()).ok();
         }
     }
 }

@@ -416,8 +416,8 @@ impl Socket {
 
     #[cfg(not(any(target_os = "solaris", target_os = "illumos")))]
     pub fn set_nonblocking(&self, nonblocking: bool) -> io::Result<()> {
-        let mut nonblocking = nonblocking as libc::c_int;
-        cvt(unsafe { libc::ioctl(self.as_raw_fd(), libc::FIONBIO, &mut nonblocking) }).map(drop)
+        rustix::io::ioctl_fionbio(self, nonblocking)?;
+        Ok(())
     }
 
     #[cfg(any(target_os = "solaris", target_os = "illumos"))]
