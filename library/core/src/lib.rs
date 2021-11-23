@@ -115,6 +115,8 @@
 #![feature(const_inherent_unchecked_arith)]
 #![feature(const_int_unchecked_arith)]
 #![feature(const_intrinsic_forget)]
+#![feature(const_ipv4)]
+#![feature(const_ipv6)]
 #![feature(const_likely)]
 #![feature(const_maybe_uninit_uninit_array)]
 #![feature(const_maybe_uninit_as_mut_ptr)]
@@ -136,6 +138,7 @@
 #![feature(const_size_of_val)]
 #![feature(const_slice_from_raw_parts)]
 #![feature(const_slice_ptr_len)]
+#![feature(const_socketaddr)]
 #![feature(const_str_from_utf8_unchecked_mut)]
 #![feature(const_swap)]
 #![feature(const_trait_impl)]
@@ -318,6 +321,7 @@ pub mod ffi;
 pub mod iter;
 #[unstable(feature = "once_cell", issue = "74465")]
 pub mod lazy;
+pub mod net;
 pub mod option;
 pub mod panic;
 pub mod panicking;
