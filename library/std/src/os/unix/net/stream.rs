@@ -21,6 +21,7 @@ use crate::sys::cvt;
 use crate::sys::net::Socket;
 use crate::sys_common::{AsInner, FromInner};
 use crate::time::Duration;
+use core::os::unix::net::SocketAddrExt;
 
 #[unstable(feature = "peer_credentials_unix_socket", issue = "42839", reason = "unstable")]
 #[cfg(any(
@@ -125,11 +126,8 @@ impl UnixStream {
     pub fn connect_addr(socket_addr: &SocketAddr) -> io::Result<UnixStream> {
         unsafe {
             let inner = Socket::new_raw(libc::AF_UNIX, libc::SOCK_STREAM)?;
-            cvt(libc::connect(
-                inner.as_raw_fd(),
-                &socket_addr.addr as *const _ as *const _,
-                socket_addr.len,
-            ))?;
+            let (addr, len) = socket_addr.inner.as_raw();
+            cvt(libc::connect(inner.as_raw_fd(), addr as *const _ as *const _, len))?;
             Ok(UnixStream(inner))
         }
     }

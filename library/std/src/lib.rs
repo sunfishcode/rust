@@ -286,6 +286,7 @@
 #![feature(prelude_2024)]
 #![feature(ptr_as_uninit)]
 #![feature(raw_os_nonzero)]
+#![feature(rustix)]
 #![feature(slice_internals)]
 #![feature(slice_ptr_get)]
 #![feature(std_internals)]
@@ -301,6 +302,7 @@
 #![feature(new_uninit)]
 #![feature(thin_box)]
 #![feature(try_reserve_kind)]
+#![feature(unix_socket_abstract)]
 #![feature(vec_into_raw_parts)]
 #![feature(slice_concat_trait)]
 //

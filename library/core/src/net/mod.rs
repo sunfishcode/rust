@@ -54,4 +54,4 @@ const fn ntohs(i: u16) -> u16 {
 }
 
 /* Types with platform-specific representations. */
-mod c;
+pub(crate) mod c;

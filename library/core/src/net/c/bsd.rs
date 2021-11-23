@@ -6,6 +6,26 @@ pub struct sockaddr {
     pub sa_data: [u8; 14],
 }
 
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+struct sockaddr_in {
+    pub sin_len: u8,
+    pub sin_family: sa_family_t,
+    pub sin_port: u16,
+    pub sin_addr: super::in_addr,
+    pub sin_zero: [c_char; 8],
+}
+
+#[cfg(any(target_os = "netbsd", target_os = "openbsd"))]
+pub struct sockaddr_in {
+    pub sin_len: u8,
+    pub sin_family: sa_family_t,
+    pub sin_port: u16,
+    pub sin_addr: super::in_addr,
+    pub sin_zero: [i8; 8],
+}
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct sockaddr_in6 {
@@ -17,6 +37,14 @@ pub struct sockaddr_in6 {
     pub sin6_scope_id: u32,
 }
 
+#[repr(C)]
+pub struct sockaddr_un {
+    pub sun_len: u8,
+    pub sun_family: sa_family_t,
+    pub sun_path: [c_char; 104],
+}
+
+pub type socklen_t = u32;
 pub type sa_family_t = u8;
 
 pub const AF_INET: sa_family_t = 2;

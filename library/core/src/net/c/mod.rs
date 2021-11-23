@@ -1,5 +1,5 @@
 #![allow(non_camel_case_types)]
-#![unstable(feature = "none", issue = "none")]
+#![unstable(feature = "rustix", issue = "none")]
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -61,4 +61,4 @@ pub struct in6_addr {
     path = "unsupported.rs"
 )]
 mod os;
-pub(super) use os::*;
+pub(crate) use os::*;

@@ -5,6 +5,7 @@ use crate::sys::cvt;
 use crate::sys::net::Socket;
 use crate::sys_common::{AsInner, FromInner, IntoInner};
 use crate::{fmt, io, mem};
+use core::os::unix::net::SocketAddrExt;
 
 /// A structure representing a Unix domain socket server.
 ///
@@ -109,11 +110,8 @@ impl UnixListener {
     pub fn bind_addr(socket_addr: &SocketAddr) -> io::Result<UnixListener> {
         unsafe {
             let inner = Socket::new_raw(libc::AF_UNIX, libc::SOCK_STREAM)?;
-            cvt(libc::bind(
-                inner.as_raw_fd(),
-                &socket_addr.addr as *const _ as *const _,
-                socket_addr.len as _,
-            ))?;
+            let (addr, len) = socket_addr.inner.as_raw();
+            cvt(libc::bind(inner.as_raw_fd(), addr as *const _ as *const _, len as _))?;
             cvt(libc::listen(inner.as_raw_fd(), 128))?;
             Ok(UnixListener(inner))
         }

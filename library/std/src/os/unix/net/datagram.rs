@@ -11,6 +11,7 @@ use crate::sys::net::Socket;
 use crate::sys_common::{AsInner, FromInner, IntoInner};
 use crate::time::Duration;
 use crate::{fmt, io};
+use core::os::unix::net::SocketAddrExt;
 
 #[cfg(any(
     target_os = "linux",
@@ -121,11 +122,8 @@ impl UnixDatagram {
     pub fn bind_addr(socket_addr: &SocketAddr) -> io::Result<UnixDatagram> {
         unsafe {
             let socket = UnixDatagram::unbound()?;
-            cvt(libc::bind(
-                socket.as_raw_fd(),
-                &socket_addr.addr as *const _ as *const _,
-                socket_addr.len as _,
-            ))?;
+            let (addr, len) = socket_addr.inner.as_raw();
+            cvt(libc::bind(socket.as_raw_fd(), addr as *const _ as *const _, len as _))?;
             Ok(socket)
         }
     }
@@ -236,11 +234,8 @@ impl UnixDatagram {
     #[unstable(feature = "unix_socket_abstract", issue = "85410")]
     pub fn connect_addr(&self, socket_addr: &SocketAddr) -> io::Result<()> {
         unsafe {
-            cvt(libc::connect(
-                self.as_raw_fd(),
-                &socket_addr.addr as *const _ as *const _,
-                socket_addr.len,
-            ))?;
+            let (addr, len) = socket_addr.inner.as_raw();
+            cvt(libc::connect(self.as_raw_fd(), addr as *const _ as *const _, len))?;
         }
         Ok(())
     }
@@ -535,14 +530,15 @@ impl UnixDatagram {
     /// ```
     #[unstable(feature = "unix_socket_abstract", issue = "85410")]
     pub fn send_to_addr(&self, buf: &[u8], socket_addr: &SocketAddr) -> io::Result<usize> {
+        let (addr, len) = socket_addr.inner.as_raw();
         unsafe {
             let count = cvt(libc::sendto(
                 self.as_raw_fd(),
                 buf.as_ptr() as *const _,
                 buf.len(),
                 MSG_NOSIGNAL,
-                &socket_addr.addr as *const _ as *const _,
-                socket_addr.len,
+                addr as *const _ as *const _,
+                len,
             ))?;
             Ok(count as usize)
         }
