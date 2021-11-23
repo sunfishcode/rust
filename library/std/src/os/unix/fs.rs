@@ -7,7 +7,7 @@
 use super::platform::fs::MetadataExt as _;
 use crate::fs::{self, OpenOptions, Permissions};
 use crate::io;
-use crate::os::unix::io::{AsFd, AsRawFd};
+use crate::os::unix::io::AsFd;
 use crate::path::Path;
 use crate::sys;
 use crate::sys_common::{AsInner, AsInnerMut, FromInner};
@@ -971,8 +971,8 @@ pub fn chown<P: AsRef<Path>>(dir: P, uid: Option<u32>, gid: Option<u32>) -> io::
 /// }
 /// ```
 #[unstable(feature = "unix_chown", issue = "88989")]
-pub fn fchown<F: AsFd>(fd: F, uid: Option<u32>, gid: Option<u32>) -> io::Result<()> {
-    sys::fs::fchown(fd.as_fd().as_raw_fd(), uid.unwrap_or(u32::MAX), gid.unwrap_or(u32::MAX))
+pub fn fchown<Fd: AsFd>(fd: &Fd, uid: Option<u32>, gid: Option<u32>) -> io::Result<()> {
+    sys::fs::fchown(fd, uid.unwrap_or(u32::MAX), gid.unwrap_or(u32::MAX))
 }
 
 /// Change the owner and group of the specified path, without dereferencing symbolic links.

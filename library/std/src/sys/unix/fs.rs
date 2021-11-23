@@ -71,6 +71,7 @@ use rustix::ffi::{ZStr, ZString};
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
 use rustix::fs::StatxFlags;
 use rustix::fs::{AtFlags, Mode, OFlags};
+use rustix::process::{Gid, Uid};
 
 pub struct File(FileDesc);
 
@@ -1462,19 +1463,29 @@ pub fn copy(from: &Path, to: &Path) -> io::Result<u64> {
 }
 
 pub fn chown(path: &Path, uid: u32, gid: u32) -> io::Result<()> {
-    let path = cstr(path)?;
-    cvt(unsafe { libc::chown(path.as_ptr(), uid as libc::uid_t, gid as libc::gid_t) })?;
+    rustix::fs::chownat(
+        rustix::fs::cwd(),
+        path,
+        unsafe { Uid::from_raw(uid) },
+        unsafe { Gid::from_raw(gid) },
+        AtFlags::empty(),
+    )?;
     Ok(())
 }
 
-pub fn fchown(fd: c_int, uid: u32, gid: u32) -> io::Result<()> {
-    cvt(unsafe { libc::fchown(fd, uid as libc::uid_t, gid as libc::gid_t) })?;
+pub fn fchown<Fd: AsFd>(fd: &Fd, uid: u32, gid: u32) -> io::Result<()> {
+    rustix::fs::fchown(fd, unsafe { Uid::from_raw(uid) }, unsafe { Gid::from_raw(gid) })?;
     Ok(())
 }
 
 pub fn lchown(path: &Path, uid: u32, gid: u32) -> io::Result<()> {
-    let path = cstr(path)?;
-    cvt(unsafe { libc::lchown(path.as_ptr(), uid as libc::uid_t, gid as libc::gid_t) })?;
+    rustix::fs::chownat(
+        rustix::fs::cwd(),
+        path,
+        unsafe { Uid::from_raw(uid) },
+        unsafe { Gid::from_raw(gid) },
+        AtFlags::SYMLINK_NOFOLLOW,
+    )?;
     Ok(())
 }
 
