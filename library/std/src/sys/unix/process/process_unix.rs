@@ -31,6 +31,8 @@ use libc::{c_int, pid_t};
 #[cfg(not(any(target_os = "vxworks", target_os = "l4re")))]
 use libc::{gid_t, uid_t};
 
+use rustix::process::Pid;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Command
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,36 +74,39 @@ impl Command {
         let env_lock = sys::os::env_read_lock();
         let (pid, pidfd) = unsafe { self.do_fork()? };
 
-        if pid == 0 {
-            crate::panic::always_abort();
-            mem::forget(env_lock);
-            drop(input);
-            let Err(err) = unsafe { self.do_exec(theirs, envp.as_ref()) };
-            let errno = err.raw_os_error().unwrap_or(libc::EINVAL) as u32;
-            let errno = errno.to_be_bytes();
-            let bytes = [
-                errno[0],
-                errno[1],
-                errno[2],
-                errno[3],
-                CLOEXEC_MSG_FOOTER[0],
-                CLOEXEC_MSG_FOOTER[1],
-                CLOEXEC_MSG_FOOTER[2],
-                CLOEXEC_MSG_FOOTER[3],
-            ];
-            // pipe I/O up to PIPE_BUF bytes should be atomic, and then
-            // we want to be sure we *don't* run at_exit destructors as
-            // we're being torn down regardless
-            rtassert!(output.write(&bytes).is_ok());
-            origin::exit_immediately(1);
-        }
+        let pid = match pid {
+            Some(pid) => pid,
+            None => {
+                crate::panic::always_abort();
+                mem::forget(env_lock);
+                drop(input);
+                let Err(err) = unsafe { self.do_exec(theirs, envp.as_ref()) };
+                let errno = err.raw_os_error().unwrap_or(libc::EINVAL) as u32;
+                let errno = errno.to_be_bytes();
+                let bytes = [
+                    errno[0],
+                    errno[1],
+                    errno[2],
+                    errno[3],
+                    CLOEXEC_MSG_FOOTER[0],
+                    CLOEXEC_MSG_FOOTER[1],
+                    CLOEXEC_MSG_FOOTER[2],
+                    CLOEXEC_MSG_FOOTER[3],
+                ];
+                // pipe I/O up to PIPE_BUF bytes should be atomic, and then
+                // we want to be sure we *don't* run at_exit destructors as
+                // we're being torn down regardless
+                rtassert!(output.write(&bytes).is_ok());
+                origin::exit_immediately(1);
+            }
+        };
 
         drop(env_lock);
         drop(output);
 
         // Safety: We obtained the pidfd from calling `clone3` with
         // `CLONE_PIDFD` so it's valid an otherwise unowned.
-        let mut p = unsafe { Process::new(pid, pidfd) };
+        let mut p = unsafe { Process::new(pid.as_raw_nonzero().get() as _, pidfd) };
         let mut bytes = [0; 8];
 
         // loop to handle EINTR
@@ -136,14 +141,14 @@ impl Command {
     // Attempts to fork the process. If successful, returns Ok((0, -1))
     // in the child, and Ok((child_pid, -1)) in the parent.
     #[cfg(not(target_os = "linux"))]
-    unsafe fn do_fork(&mut self) -> Result<(pid_t, pid_t), io::Error> {
-        cvt(libc::fork()).map(|res| (res, -1))
+    unsafe fn do_fork(&mut self) -> Result<(Option<Pid>, pid_t), io::Error> {
+        cvt(rustix::runtime::fork()).map(|res| (res, -1))
     }
 
     // Attempts to fork the process. If successful, returns Ok((0, -1))
     // in the child, and Ok((child_pid, child_pidfd)) in the parent.
     #[cfg(target_os = "linux")]
-    unsafe fn do_fork(&mut self) -> Result<(pid_t, pid_t), io::Error> {
+    unsafe fn do_fork(&mut self) -> Result<(Option<Pid>, pid_t), io::Error> {
         use crate::sync::atomic::{AtomicBool, Ordering};
 
         static HAS_CLONE3: AtomicBool = AtomicBool::new(true);
@@ -201,7 +206,7 @@ impl Command {
 
             let res = cvt(clone3(args_ptr, args_size));
             match res {
-                Ok(n) => return Ok((n as pid_t, pidfd)),
+                Ok(n) => return Ok((Pid::from_raw(n as _), pidfd)),
                 Err(e) => match e.raw_os_error() {
                     // Multiple threads can race to execute this store,
                     // but that's fine - that just means that multiple threads
@@ -217,7 +222,8 @@ impl Command {
 
         // Generally, we just call `fork`. If we get here after wanting `clone3`,
         // then the syscall does not exist or we do not have permission to call it.
-        cvt(libc::fork()).map(|res| (res, pidfd))
+        let res = rustix::runtime::fork().map(|res| (res, pidfd))?;
+        Ok(res)
     }
 
     pub fn exec(&mut self, default: Stdio) -> io::Error {

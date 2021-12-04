@@ -114,7 +114,7 @@ impl Command {
             Ok(t) => unsafe {
                 let mut status = 0 as c_int;
                 libc::waitpid(t.0.pid, &mut status, 0);
-                libc::exit(0);
+                origin::exit(0)
             },
             Err(e) => e,
         }

@@ -28,6 +28,8 @@ use crate::sys::weak::weak;
 
 use libc::{c_char, c_int, c_void};
 
+use rustix::process::Pid;
+
 const TMPBUF_SZ: usize = 128;
 
 cfg_if::cfg_if! {
@@ -622,15 +624,15 @@ pub fn home_dir() -> Option<PathBuf> {
 }
 
 pub fn exit(code: i32) -> ! {
-    unsafe { libc::exit(code as c_int) }
+    origin::exit(code as c_int)
 }
 
 pub fn getpid() -> u32 {
-    rustix::process::getpid().as_raw()
+    rustix::process::getpid().as_raw_nonzero().get()
 }
 
 pub fn getppid() -> u32 {
-    rustix::process::getppid().as_raw()
+    Pid::as_raw(rustix::process::getppid())
 }
 
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
