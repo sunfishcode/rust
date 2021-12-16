@@ -124,7 +124,7 @@ mod imp {
     }
 
     unsafe fn get_stackp() -> *mut libc::c_void {
-        use rustix::io::{MapFlags, MprotectFlags, ProtFlags};
+        use rustix::mm::{MapFlags, MprotectFlags, ProtFlags};
 
         // OpenBSD requires this flag for stack mapping
         // otherwise the said mapping will fail as a no-op on most systems
@@ -133,14 +133,14 @@ mod imp {
         let flags = MapFlags::PRIVATE | MapFlags::STACK;
         #[cfg(not(any(target_os = "openbsd", target_os = "netbsd", target_os = "linux",)))]
         let flags = MapFlags::PRIVATE;
-        let stackp = rustix::io::mmap_anonymous(
+        let stackp = rustix::mm::mmap_anonymous(
             ptr::null_mut(),
             SIGSTKSZ + page_size(),
             ProtFlags::READ | ProtFlags::WRITE,
             flags,
         )
         .expect("failed to allocate an alternative stack");
-        rustix::io::mprotect(stackp, page_size(), MprotectFlags::empty())
+        rustix::mm::mprotect(stackp, page_size(), MprotectFlags::empty())
             .expect("failed to set up alternative stack guard page");
         stackp.add(page_size())
     }
@@ -179,7 +179,7 @@ mod imp {
             sigaltstack(&stack, ptr::null_mut());
             // We know from `get_stackp` that the alternate stack we installed is part of a mapping
             // that started one page earlier, so walk back a page and unmap from there.
-            rustix::io::munmap(data.sub(page_size()), SIGSTKSZ + page_size()).ok();
+            rustix::mm::munmap(data.sub(page_size()), SIGSTKSZ + page_size()).ok();
         }
     }
 }

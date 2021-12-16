@@ -82,7 +82,7 @@ pub fn read2(p1: AnonPipe, v1: &mut Vec<u8>, p2: AnonPipe, v2: &mut Vec<u8>) -> 
     let mut fds = [PollFd::new(&p1, PollFlags::IN), PollFd::new(&p2, PollFlags::IN)];
     loop {
         // wait for either pipe to become readable using `poll`
-        rustix::io::with_retrying(|| rustix::io::poll(&mut fds, -1))?;
+        rustix::io::retry_on_intr(|| rustix::io::poll(&mut fds, -1))?;
 
         if !fds[0].revents().is_empty() && read(&p1, v1)? {
             p2.set_nonblocking(false)?;
@@ -103,8 +103,8 @@ pub fn read2(p1: AnonPipe, v1: &mut Vec<u8>, p2: AnonPipe, v2: &mut Vec<u8>) -> 
         match fd.read_to_end(dst) {
             Ok(_) => Ok(true),
             Err(e) => {
-                if e.raw_os_error() == Some(rustix::io::Error::WOULDBLOCK.raw_os_error())
-                    || e.raw_os_error() == Some(rustix::io::Error::AGAIN.raw_os_error())
+                if e.raw_os_error() == Some(rustix::io::Errno::WOULDBLOCK.raw_os_error())
+                    || e.raw_os_error() == Some(rustix::io::Errno::AGAIN.raw_os_error())
                 {
                     Ok(false)
                 } else {

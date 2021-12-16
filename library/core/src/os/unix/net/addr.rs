@@ -1,4 +1,4 @@
-use crate::ffi::{c_void, ZStr};
+use crate::ffi::{c_void, CStr};
 use crate::{ascii, fmt, iter, mem};
 
 use crate::net::c as libc;
@@ -10,7 +10,7 @@ fn sun_path_offset(addr: &libc::sockaddr_un) -> usize {
     path - base
 }
 
-pub(super) fn sockaddr_un(path: &ZStr) -> Result<SocketAddr, &'static &'static str> {
+pub(super) fn sockaddr_un(path: &CStr) -> Result<SocketAddr, &'static &'static str> {
     let mut addr: libc::sockaddr_un = unsafe { mem::zeroed() };
     addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
 
@@ -39,7 +39,7 @@ pub(super) fn sockaddr_un(path: &ZStr) -> Result<SocketAddr, &'static &'static s
 
 enum AddressKind<'a> {
     Unnamed,
-    Pathname(&'a ZStr),
+    Pathname(&'a CStr),
     Abstract(&'a [u8]),
 }
 
@@ -82,7 +82,7 @@ impl SocketAddr {
     /// Constructs a `SocketAddr` representing the given path.
     #[unstable(feature = "rustix", issue = "none")]
     #[inline]
-    pub fn from_path(path: &ZStr) -> Result<Self, &'static &'static str> {
+    pub fn from_path(path: &CStr) -> Result<Self, &'static &'static str> {
         sockaddr_un(path)
     }
 
@@ -144,12 +144,12 @@ impl SocketAddr {
     ///
     /// ```no_run
     /// use std::os::unix::net::UnixListener;
-    /// use core::ffi::ZStr;
+    /// use core::ffi::CStr;
     ///
     /// fn main() -> std::io::Result<()> {
     ///     let socket = UnixListener::bind("/tmp/sock")?;
     ///     let addr = socket.local_addr().expect("Couldn't get local address");
-    ///     assert_eq!(addr.as_pathname(), Some(ZStr::new("/tmp/sock")));
+    ///     assert_eq!(addr.as_pathname(), Some(CStr::new("/tmp/sock")));
     ///     Ok(())
     /// }
     /// ```
@@ -168,7 +168,7 @@ impl SocketAddr {
     /// ```
     #[stable(feature = "unix_socket", since = "1.10.0")]
     #[must_use]
-    pub fn as_pathname(&self) -> Option<&ZStr> {
+    pub fn as_pathname(&self) -> Option<&CStr> {
         if let AddressKind::Pathname(path) = self.address() { Some(path) } else { None }
     }
 
@@ -210,7 +210,7 @@ impl SocketAddr {
         } else if self.addr.sun_path[0] == 0 {
             AddressKind::Abstract(&path[1..len])
         } else {
-            AddressKind::Pathname(unsafe { ZStr::from_bytes_with_nul_unchecked(&path[..len]) })
+            AddressKind::Pathname(unsafe { CStr::from_bytes_with_nul_unchecked(&path[..len]) })
         }
     }
 

@@ -91,9 +91,8 @@ pub unsafe fn init(argc: isize, argv: *const *const u8) {
             target_os = "horizon",
         )))]
         'poll: {
-            use crate::sys::os::errno;
+            use rustix::fs::{Mode, OFlags};
             use rustix::io::{PollFd, PollFlags};
-            use rustix::fs::{OFlags, Mode};
             let mut pfds = [
                 PollFd::from_borrowed_fd(rustix::io::stdin(), PollFlags::empty()),
                 PollFd::from_borrowed_fd(rustix::io::stdout(), PollFlags::empty()),
@@ -102,8 +101,10 @@ pub unsafe fn init(argc: isize, argv: *const *const u8) {
 
             while let Err(err) = rustix::io::poll(&mut pfds, 0) {
                 match err {
-                    rustix::io::Errno::EINTR => continue,
-                    rustix::io::Errno::EINVAL | rustix::io::Errno::EAGAIN | rustix::io::Errno::ENOMEM => {
+                    rustix::io::Errno::INTR => continue,
+                    rustix::io::Errno::INVAL
+                    | rustix::io::Errno::AGAIN
+                    | rustix::io::Errno::NOMEM => {
                         // RLIMIT_NOFILE or temporary allocation failures
                         // may be preventing use of poll(), fall back to fcntl
                         break 'poll;
@@ -115,7 +116,14 @@ pub unsafe fn init(argc: isize, argv: *const *const u8) {
                 if !pfd.revents().contains(PollFlags::NVAL) {
                     continue;
                 }
-                if rustix::fs::openat(rustix::fs::cwd(), rustix::zstr!("/dev/null"), OFlags::RDWR, Mode::empty()).is_err() {
+                if rustix::fs::openat(
+                    rustix::fs::cwd(),
+                    rustix::cstr!("/dev/null"),
+                    OFlags::RDWR,
+                    Mode::empty(),
+                )
+                .is_err()
+                {
                     // If the stream is closed but we failed to reopen it, abort the
                     // process. Otherwise we wouldn't preserve the safety of
                     // operations on the corresponding Rust object Stdin, Stdout, or
@@ -137,9 +145,20 @@ pub unsafe fn init(argc: isize, argv: *const *const u8) {
             target_os = "horizon",
         )))]
         {
+            use rustix::fd::BorrowedFd;
+            use rustix::fs::{Mode, OFlags};
             for fd in 0..3 {
-                if rustix::fs::fcntl_getfd(unsafe { BorrowedFd::borrow_raw(fd) }) == Err(rustix::io::Error::BADF) {
-                    if rustix::fs::open(rustix::cstr!("/dev/null"), OFlags::RDWR, Mode::empty()).is_err() {
+                if rustix::fs::fcntl_getfd(BorrowedFd::borrow_raw(fd))
+                    == Err(rustix::io::Errno::BADF)
+                {
+                    if rustix::fs::openat(
+                        rustix::fs::cwd(),
+                        rustix::cstr!("/dev/null"),
+                        OFlags::RDWR,
+                        Mode::empty(),
+                    )
+                    .is_err()
+                    {
                         // If the stream is closed but we failed to reopen it, abort the
                         // process. Otherwise we wouldn't preserve the safety of
                         // operations on the corresponding Rust object Stdin, Stdout, or

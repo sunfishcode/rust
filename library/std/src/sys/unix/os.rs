@@ -561,7 +561,7 @@ pub fn unsetenv(n: &OsStr) -> io::Result<()> {
 
 #[cfg(not(target_os = "espidf"))]
 pub fn page_size() -> usize {
-    rustix::process::page_size()
+    rustix::param::page_size()
 }
 
 pub fn temp_dir() -> PathBuf {

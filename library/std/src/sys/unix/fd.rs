@@ -6,26 +6,12 @@ mod tests;
 use crate::cmp;
 use crate::io::{self, IoSlice, IoSliceMut, Read, ReadBuf};
 use crate::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
+use crate::sys::cvt;
 use crate::sys_common::{AsInner, FromInner, IntoInner};
 
 use rustix::fs::FdFlags;
 #[cfg(not(target_os = "linux"))]
 use rustix::fs::OFlags;
-
-#[cfg(any(
-    target_os = "android",
-    target_os = "linux",
-    target_os = "emscripten",
-    target_os = "l4re"
-))]
-use libc::off64_t;
-#[cfg(not(any(
-    target_os = "linux",
-    target_os = "emscripten",
-    target_os = "l4re",
-    target_os = "android"
-)))]
-use libc::off_t as off64_t;
 
 #[derive(Debug)]
 pub struct FileDesc(OwnedFd);
@@ -42,39 +28,6 @@ pub struct FileDesc(OwnedFd);
 const READ_LIMIT: usize = libc::c_int::MAX as usize - 1;
 #[cfg(not(target_os = "macos"))]
 const READ_LIMIT: usize = libc::ssize_t::MAX as usize;
-
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "ios",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-))]
-const fn max_iov() -> usize {
-    libc::IOV_MAX as usize
-}
-
-#[cfg(any(target_os = "android", target_os = "emscripten", target_os = "linux"))]
-const fn max_iov() -> usize {
-    libc::UIO_MAXIOV as usize
-}
-
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "dragonfly",
-    target_os = "emscripten",
-    target_os = "freebsd",
-    target_os = "ios",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "horizon"
-)))]
-const fn max_iov() -> usize {
-    16 // The minimum value required by POSIX.
-}
 
 impl FileDesc {
     pub fn read(&self, buf: &mut [u8]) -> io::Result<usize> {

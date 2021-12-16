@@ -15,7 +15,7 @@ use crate::sys_common::{AsInner, FromInner, IntoInner};
 /// descriptor, so it can be used in FFI in places where a file descriptor is
 /// passed as an argument, it is not captured or consumed, and it never has the
 /// value `-1`.
-#[unstable(feature = "io_safety", issue = "87074")]
+#[stable(feature = "io_safety", since = "1.63.0")]
 pub use rustix::fd::BorrowedFd;
 
 /// An owned file descriptor.
@@ -26,7 +26,7 @@ pub use rustix::fd::BorrowedFd;
 /// descriptor, so it can be used in FFI in places where a file descriptor is
 /// passed as a consumed argument or returned as an owned value, and it never
 /// has the value `-1`.
-#[unstable(feature = "io_safety", issue = "87074")]
+#[stable(feature = "io_safety", since = "1.63.0")]
 pub use rustix::io::OwnedFd;
 
 /// A trait to borrow the file descriptor from an underlying object.
@@ -34,7 +34,7 @@ pub use rustix::io::OwnedFd;
 /// This is only available on unix platforms and must be imported in order to
 /// call the method. Windows platforms have a corresponding `AsHandle` and
 /// `AsSocket` set of traits.
-#[unstable(feature = "io_safety", issue = "87074")]
+#[stable(feature = "io_safety", since = "1.63.0")]
 pub use rustix::fd::AsFd;
 
 #[stable(feature = "io_safety", since = "1.63.0")]

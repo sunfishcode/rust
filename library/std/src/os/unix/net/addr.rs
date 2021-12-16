@@ -105,7 +105,7 @@ impl SocketAddr {
             cvt(f(ptr.cast(), &mut len))?;
             core::os::unix::net::SocketAddr::from_raw(ptr.cast(), len)
                 .map(|inner| Self { inner })
-                .map_err(|err| io::Error::new_const(io::ErrorKind::InvalidInput, err))
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, *err))
         }
     }
 
@@ -117,7 +117,7 @@ impl SocketAddr {
         unsafe {
             core::os::unix::net::SocketAddr::from_raw(ptr.cast(), len)
                 .map(|inner| Self { inner })
-                .map_err(|err| io::Error::new_const(io::ErrorKind::InvalidInput, err))
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, *err))
         }
     }
 
@@ -153,7 +153,7 @@ impl SocketAddr {
     where
         P: AsRef<Path>,
     {
-        sockaddr_un(path.as_ref()).map(|(addr, len)| SocketAddr { addr, len })
+        sockaddr_un(path.as_ref()).and_then(|(addr, len)| SocketAddr::from_parts(addr, len))
     }
 
     /// Returns `true` if the address is unnamed.
@@ -295,7 +295,7 @@ impl SocketAddr {
     pub fn from_abstract_namespace(namespace: &[u8]) -> io::Result<SocketAddr> {
         core::os::unix::net::SocketAddr::from_abstract_namespace(namespace)
             .map(|inner| Self { inner })
-            .map_err(|err| io::Error::new_const(io::ErrorKind::InvalidInput, err))
+            .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, *err))
     }
 }
 

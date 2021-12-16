@@ -898,9 +898,9 @@ fn _assert_error_is_sync_send() {
 }
 
 #[unstable(feature = "rustix", issue = "none")]
-impl From<rustix::io::Error> for crate::io::Error {
+impl From<rustix::io::Errno> for crate::io::Error {
     #[inline]
-    fn from(err: rustix::io::Error) -> Self {
+    fn from(err: rustix::io::Errno) -> Self {
         Self::from_raw_os_error(err.raw_os_error() as _)
     }
 }

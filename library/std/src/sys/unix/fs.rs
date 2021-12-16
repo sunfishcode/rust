@@ -20,7 +20,7 @@ use crate::sys::weak::weak;
 
 use libc::{c_int, mode_t};
 
-pub use crate::sys_common::fs::{remove_dir_all, try_exists};
+pub use crate::sys_common::fs::try_exists;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use libc::c_char;
 #[cfg(target_os = "android")]
@@ -62,12 +62,11 @@ use libc::{
     target_os = "android"
 )))]
 use libc::{
-    dirent as dirent64, fstat as fstat64, ftruncate as ftruncate64, lstat as lstat64,
-    off_t as off64_t, open as open64, stat as stat64,
+    dirent as dirent64, fstat as fstat64, ftruncate as ftruncate64, off_t as off64_t,
+    open as open64, stat as stat64,
 };
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "l4re"))]
-use libc::{dirent64, lstat64, off64_t};
-use rustix::ffi::{ZStr, ZString};
+use libc::{dirent64, off64_t};
 #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
 use rustix::fs::StatxFlags;
 use rustix::fs::{AtFlags, Mode, OFlags};
@@ -113,7 +112,7 @@ cfg_has_statx! {{
 
     // We prefer `statx` on Linux if available, which contains file creation time.
     // Default `Stat` contains no creation time.
-    unsafe fn try_statx<P: rustix::path::Arg>(
+    fn try_statx<P: rustix::path::Arg>(
         fd: BorrowedFd<'_>,
         path: P,
         flags: AtFlags,
@@ -132,11 +131,11 @@ cfg_has_statx! {{
             0 => {
                 // It is a trick to call `statx` with an empty path to check if the syscall
                 // is available. According to the manual, it is expected to fail with ENOENT.
-                let res = rustix::fs::statx(rustix::fs::cwd(), rustix::zstr!(""), AtFlags::empty(), StatxFlags::ALL);
+                let res = rustix::fs::statx(rustix::fs::cwd(), rustix::cstr!(""), AtFlags::empty(), StatxFlags::ALL);
                 // We don't check `err == Some(libc::ENOSYS)` because the syscall may be limited
                 // and returns `EPERM`. Listing all possible errors seems not a good idea.
                 // See: https://github.com/rust-lang/rust/issues/65662
-                if let Err(rustix::io::Error::NOENT) = res {
+                if let Err(rustix::io::Errno::NOENT) = res {
                     STATX_STATE.store(2, Ordering::Relaxed);
                 } else {
                     STATX_STATE.store(1, Ordering::Relaxed);
@@ -153,7 +152,7 @@ cfg_has_statx! {{
         };
 
         // We cannot fill `Stat` exhaustively because of private padding fields.
-        let mut stat: rustix::fs::Stat = mem::zeroed();
+        let mut stat: rustix::fs::Stat = unsafe { mem::zeroed() };
         // `c_ulong` on gnu-mips, `dev_t` otherwise
         stat.st_dev = rustix::fs::makedev(buf.stx_dev_major, buf.stx_dev_minor) as _;
         stat.st_ino = buf.stx_ino as libc::ino64_t;
@@ -368,18 +367,12 @@ impl FileAttr {
 impl FileAttr {
     #[cfg(not(any(target_os = "vxworks", target_os = "espidf", target_os = "horizon")))]
     pub fn modified(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::from(rustix::time::Timespec {
-            tv_sec: self.stat.st_mtime as libc::time_t,
-            tv_nsec: self.stat.st_mtime_nsec as _,
-        }))
+        Ok(SystemTime::new(self.stat.st_mtime as libc::time_t, self.stat.st_mtime_nsec as _))
     }
 
     #[cfg(any(target_os = "vxworks", target_os = "espidf"))]
     pub fn modified(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::from(rustix::time::Timespec {
-            tv_sec: self.stat.st_mtime as libc::time_t,
-            tv_nsec: 0,
-        }))
+        Ok(SystemTime::new(self.stat.st_mtime as libc::time_t, 0))
     }
 
     #[cfg(target_os = "horizon")]
@@ -389,18 +382,12 @@ impl FileAttr {
 
     #[cfg(not(any(target_os = "vxworks", target_os = "espidf", target_os = "horizon")))]
     pub fn accessed(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::from(rustix::time::Timespec {
-            tv_sec: self.stat.st_atime as libc::time_t,
-            tv_nsec: self.stat.st_atime_nsec as _,
-        }))
+        Ok(SystemTime::new(self.stat.st_atime as libc::time_t, self.stat.st_atime_nsec as _))
     }
 
     #[cfg(any(target_os = "vxworks", target_os = "espidf"))]
     pub fn accessed(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::from(rustix::time::Timespec {
-            tv_sec: self.stat.st_atime as libc::time_t,
-            tv_nsec: 0,
-        }))
+        Ok(SystemTime::new(self.stat.st_atime as libc::time_t, 0))
     }
 
     #[cfg(target_os = "horizon")]
@@ -415,10 +402,10 @@ impl FileAttr {
         target_os = "ios"
     ))]
     pub fn created(&self) -> io::Result<SystemTime> {
-        Ok(SystemTime::from(rustix::time::Timespec {
-            tv_sec: self.stat.st_birthtime as libc::time_t,
-            tv_nsec: self.stat.st_birthtime_nsec as libc::c_long,
-        }))
+        Ok(SystemTime::new(
+            self.stat.st_birthtime as libc::time_t,
+            self.stat.st_birthtime_nsec as libc::c_long,
+        ))
     }
 
     #[cfg(not(any(
@@ -431,10 +418,10 @@ impl FileAttr {
         cfg_has_statx! {
             if let Some(ext) = &self.statx_extra_fields {
                 return if (ext.stx_mask & libc::STATX_BTIME) != 0 {
-                    Ok(SystemTime::from(rustix::time::Timespec {
-                        tv_sec: ext.stx_btime.tv_sec as libc::time_t,
-                        tv_nsec: ext.stx_btime.tv_nsec as _,
-                    }))
+                    Ok(SystemTime::new(
+                        ext.stx_btime.tv_sec as libc::time_t,
+                        ext.stx_btime.tv_nsec as _,
+                    ))
                 } else {
                     Err(io::const_io_error!(
                         io::ErrorKind::Uncategorized,
@@ -627,21 +614,21 @@ impl DirEntry {
     #[cfg(any(target_os = "linux", target_os = "emscripten", target_os = "android"))]
     pub fn metadata(&self) -> io::Result<FileAttr> {
         let fd = cvt(unsafe { dirfd(self.dir.dirp.0) })?;
-        let name = self.name_cstr().as_ptr();
+        let name = self.name_cstr();
 
         cfg_has_statx! {
-            if let Some(ret) = unsafe { try_statx(
-                BorrowedFd::borrow_raw_fd(fd),
+            if let Some(ret) = try_statx(
+                unsafe { BorrowedFd::borrow_raw(fd) },
                 name,
                 AtFlags::SYMLINK_NOFOLLOW | AtFlags::STATX_SYNC_AS_STAT,
                 StatxFlags::ALL,
-            ) } {
+            ) {
                 return ret;
             }
         }
 
         let stat = rustix::fs::statat(
-            unsafe { &BorrowedFd::borrow_raw_fd(fd) },
+            unsafe { &BorrowedFd::borrow_raw(fd) },
             name,
             AtFlags::SYMLINK_NOFOLLOW,
         )?;
@@ -853,7 +840,7 @@ impl File {
             | OFlags::from_bits_truncate(opts.get_access_mode()? as _)
             | OFlags::from_bits_truncate(opts.get_creation_mode()? as _)
             | (OFlags::from_bits_truncate(opts.custom_flags as _) & !OFlags::ACCMODE);
-        let fd = rustix::io::with_retrying(|| {
+        let fd = rustix::io::retry_on_intr(|| {
             rustix::fs::openat(rustix::fs::cwd(), path, flags, Mode::from_bits_truncate(opts.mode))
         })?;
         Ok(File(FileDesc::from_inner(fd)))
@@ -861,12 +848,12 @@ impl File {
 
     pub fn file_attr(&self) -> io::Result<FileAttr> {
         cfg_has_statx! {
-            if let Some(ret) = unsafe { try_statx(
+            if let Some(ret) = try_statx(
                 self.as_fd(),
-                rustix::zstr!(""),
+                rustix::cstr!(""),
                 AtFlags::EMPTY_PATH | AtFlags::STATX_SYNC_AS_STAT,
                 StatxFlags::ALL,
-            ) } {
+            ) {
                 return ret;
             }
         }
@@ -876,7 +863,7 @@ impl File {
     }
 
     pub fn fsync(&self) -> io::Result<()> {
-        rustix::io::with_retrying(|| os_fsync(self))?;
+        rustix::io::retry_on_intr(|| os_fsync(self))?;
         return Ok(());
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -890,7 +877,7 @@ impl File {
     }
 
     pub fn datasync(&self) -> io::Result<()> {
-        rustix::io::with_retrying(|| os_datasync(self))?;
+        rustix::io::retry_on_intr(|| os_datasync(self))?;
         return Ok(());
 
         #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -922,7 +909,7 @@ impl File {
     }
 
     pub fn truncate(&self, size: u64) -> io::Result<()> {
-        rustix::io::with_retrying(|| rustix::fs::ftruncate(self, size))?;
+        rustix::io::retry_on_intr(|| rustix::fs::ftruncate(self, size))?;
         Ok(())
     }
 
@@ -1169,7 +1156,7 @@ pub fn rename(old: &Path, new: &Path) -> io::Result<()> {
 }
 
 pub fn set_perm(p: &Path, perm: FilePermissions) -> io::Result<()> {
-    rustix::io::with_retrying(|| {
+    rustix::io::retry_on_intr(|| {
         rustix::fs::chmodat(rustix::fs::cwd(), p, rustix::fs::Mode::from_bits_truncate(perm.mode))
     })?;
     Ok(())
@@ -1181,7 +1168,7 @@ pub fn rmdir(p: &Path) -> io::Result<()> {
 }
 
 pub fn readlink(p: &Path) -> io::Result<PathBuf> {
-    let path = rustix::fs::readlinkat(rustix::fs::cwd(), p, ZString::default())?;
+    let path = rustix::fs::readlinkat(rustix::fs::cwd(), p, CString::default())?;
     Ok(OsString::from_vec(path.into_bytes()).into())
 }
 
@@ -1227,12 +1214,12 @@ pub fn link(original: &Path, link: &Path) -> io::Result<()> {
 
 pub fn stat(p: &Path) -> io::Result<FileAttr> {
     cfg_has_statx! {
-        if let Some(ret) = unsafe { try_statx(
+        if let Some(ret) = try_statx(
             rustix::fs::cwd(),
             p,
             AtFlags::STATX_SYNC_AS_STAT,
             StatxFlags::ALL,
-        ) } {
+        ) {
             return ret;
         }
     }
@@ -1243,12 +1230,12 @@ pub fn stat(p: &Path) -> io::Result<FileAttr> {
 
 pub fn lstat(p: &Path) -> io::Result<FileAttr> {
     cfg_has_statx! {
-        if let Some(ret) = unsafe { try_statx(
+        if let Some(ret) = try_statx(
             rustix::fs::cwd(),
             p,
             AtFlags::SYMLINK_NOFOLLOW | AtFlags::STATX_SYNC_AS_STAT,
             StatxFlags::ALL,
-        ) } {
+        ) {
             return ret;
         }
     }
@@ -1466,15 +1453,19 @@ pub fn chown(path: &Path, uid: u32, gid: u32) -> io::Result<()> {
     rustix::fs::chownat(
         rustix::fs::cwd(),
         path,
-        unsafe { Uid::from_raw(uid) },
-        unsafe { Gid::from_raw(gid) },
+        Some(unsafe { Uid::from_raw(uid) }),
+        Some(unsafe { Gid::from_raw(gid) }),
         AtFlags::empty(),
     )?;
     Ok(())
 }
 
 pub fn fchown<Fd: AsFd>(fd: &Fd, uid: u32, gid: u32) -> io::Result<()> {
-    rustix::fs::fchown(fd, unsafe { Uid::from_raw(uid) }, unsafe { Gid::from_raw(gid) })?;
+    rustix::fs::fchown(
+        fd,
+        Some(unsafe { Uid::from_raw(uid) }),
+        Some(unsafe { Gid::from_raw(gid) }),
+    )?;
     Ok(())
 }
 
@@ -1482,8 +1473,8 @@ pub fn lchown(path: &Path, uid: u32, gid: u32) -> io::Result<()> {
     rustix::fs::chownat(
         rustix::fs::cwd(),
         path,
-        unsafe { Uid::from_raw(uid) },
-        unsafe { Gid::from_raw(gid) },
+        Some(unsafe { Uid::from_raw(uid) }),
+        Some(unsafe { Gid::from_raw(gid) }),
         AtFlags::SYMLINK_NOFOLLOW,
     )?;
     Ok(())
@@ -1510,14 +1501,15 @@ mod remove_dir_impl {
     use super::{cstr, lstat, Dir, DirEntry, InnerReadDir, ReadDir};
     use crate::ffi::CStr;
     use crate::io;
-    use crate::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd};
+    use crate::os::unix::io::{AsRawFd, IntoRawFd};
     use crate::os::unix::prelude::{OwnedFd, RawFd};
     use crate::path::{Path, PathBuf};
     use crate::sync::Arc;
-    use crate::sys::{cvt, cvt_r};
+    use rustix::fd::BorrowedFd;
+    use rustix::fs::{AtFlags, Mode, OFlags};
 
     #[cfg(not(all(target_os = "macos", not(target_arch = "aarch64")),))]
-    use libc::{fdopendir, openat, unlinkat};
+    use libc::fdopendir;
     #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
     use macos_weak::{fdopendir, openat, unlinkat};
 
@@ -1562,15 +1554,19 @@ mod remove_dir_impl {
         }
     }
 
-    pub fn openat_nofollow_dironly(parent_fd: Option<RawFd>, p: &CStr) -> io::Result<OwnedFd> {
-        let fd = cvt_r(|| unsafe {
-            openat(
-                parent_fd.unwrap_or(libc::AT_FDCWD),
-                p.as_ptr(),
-                libc::O_CLOEXEC | libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_DIRECTORY,
+    pub fn openat_nofollow_dironly(
+        parent_fd: Option<BorrowedFd<'_>>,
+        path: &CStr,
+    ) -> io::Result<OwnedFd> {
+        let fd = rustix::io::retry_on_intr(|| {
+            rustix::fs::openat(
+                &parent_fd.unwrap_or(rustix::fs::cwd()),
+                path,
+                OFlags::CLOEXEC | OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::DIRECTORY,
+                Mode::empty(),
             )
         })?;
-        Ok(unsafe { OwnedFd::from_raw_fd(fd) })
+        Ok(fd)
     }
 
     fn fdreaddir(dir_fd: OwnedFd) -> io::Result<(ReadDir, RawFd)> {
@@ -1625,16 +1621,17 @@ mod remove_dir_impl {
         }
     }
 
-    fn remove_dir_all_recursive(parent_fd: Option<RawFd>, path: &CStr) -> io::Result<()> {
+    fn remove_dir_all_recursive(parent_fd: Option<BorrowedFd<'_>>, path: &CStr) -> io::Result<()> {
         // try opening as directory
-        let fd = match openat_nofollow_dironly(parent_fd, &path) {
+        let fd = match openat_nofollow_dironly(parent_fd, path) {
             Err(err) if matches!(err.raw_os_error(), Some(libc::ENOTDIR | libc::ELOOP)) => {
                 // not a directory - don't traverse further
                 // (for symlinks, older Linux kernels may return ELOOP instead of ENOTDIR)
                 return match parent_fd {
                     // unlink...
                     Some(parent_fd) => {
-                        cvt(unsafe { unlinkat(parent_fd, path.as_ptr(), 0) }).map(drop)
+                        rustix::fs::unlinkat(parent_fd, path, AtFlags::empty())?;
+                        Ok(())
                     }
                     // ...unless this was supposed to be the deletion root directory
                     None => Err(err),
@@ -1645,6 +1642,7 @@ mod remove_dir_impl {
 
         // open the directory passing ownership of the fd
         let (dir, fd) = fdreaddir(fd)?;
+        let fd = unsafe { BorrowedFd::borrow_raw(fd) };
         for child in dir {
             let child = child?;
             let child_name = child.name_cstr();
@@ -1653,7 +1651,7 @@ mod remove_dir_impl {
                     remove_dir_all_recursive(Some(fd), child_name)?;
                 }
                 Some(false) => {
-                    cvt(unsafe { unlinkat(fd, child_name.as_ptr(), 0) })?;
+                    rustix::fs::unlinkat(fd, child_name, AtFlags::empty())?;
                 }
                 None => {
                     // POSIX specifies that calling unlink()/unlinkat(..., 0) on a directory can succeed
@@ -1666,9 +1664,7 @@ mod remove_dir_impl {
         }
 
         // unlink the directory after removing its contents
-        cvt(unsafe {
-            unlinkat(parent_fd.unwrap_or(libc::AT_FDCWD), path.as_ptr(), libc::AT_REMOVEDIR)
-        })?;
+        rustix::fs::unlinkat(parent_fd.unwrap_or(rustix::fs::cwd()), path, AtFlags::REMOVEDIR)?;
         Ok(())
     }
 

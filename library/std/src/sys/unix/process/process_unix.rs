@@ -286,23 +286,23 @@ impl Command {
     ) -> Result<!, io::Error> {
         use crate::os::unix::io::BorrowedFd;
         use crate::sys;
-        use rustix::io::with_retrying;
+        use rustix::io::retry_on_intr;
 
         // Acquire owning handles for the stdio streams so that we can
         // overwrite them with `dup2`.
-        let stdin = rustix::io::take_stdin();
-        let stdout = rustix::io::take_stdout();
-        let stderr = rustix::io::take_stderr();
+        let mut stdin = rustix::io::take_stdin();
+        let mut stdout = rustix::io::take_stdout();
+        let mut stderr = rustix::io::take_stderr();
 
         // Overwrite the stdio streams with `dup2`.
         if let Some(fd) = stdio.stdin.fd() {
-            with_retrying(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &stdin))?;
+            retry_on_intr(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &mut stdin))?;
         }
         if let Some(fd) = stdio.stdout.fd() {
-            with_retrying(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &stdout))?;
+            retry_on_intr(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &mut stdout))?;
         }
         if let Some(fd) = stdio.stderr.fd() {
-            with_retrying(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &stderr))?;
+            retry_on_intr(|| rustix::io::dup2(&BorrowedFd::borrow_raw(fd), &mut stderr))?;
         }
 
         // Release ownership of the stdio streams so that we leave them open.

@@ -86,7 +86,7 @@ impl io::Write for Stderr {
 }
 
 pub fn is_ebadf(err: &io::Error) -> bool {
-    err.raw_os_error() == Some(rustix::io::Error::BADF.raw_os_error())
+    err.raw_os_error() == Some(rustix::io::Errno::BADF.raw_os_error())
 }
 
 pub const STDIN_BUF_SIZE: usize = crate::sys_common::io::DEFAULT_BUF_SIZE;

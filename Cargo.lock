@@ -971,7 +971,7 @@ dependencies = [
  "crossbeam-utils",
  "lazy_static",
  "memoffset",
- "scopeguard",
+ "scopeguard 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2233,16 +2233,6 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.0.44"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5982728f218aa95d578904e628c5dcd5a9fbf2d8f83d0b4e54a64ed1eee5e0a8"
-dependencies = [
- "compiler_builtins",
- "rustc-std-workspace-core",
-]
-
-[[package]]
-name = "linux-raw-sys"
 version = "0.0.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4d2456c373231a208ad294c33dc5bff30051eafd954cd4caae83a712b12854d"
@@ -2262,7 +2252,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "327fa5b6a6940e4699ec49a9beae1ea4845c6bab9314e4f84ac68742139d8c53"
 dependencies = [
  "autocfg",
- "scopeguard",
+ "scopeguard 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "lock_api"
+version = "0.4.7"
+source = "git+https://github.com/sunfishcode/parking_lot?branch=rustc-dep-of-std#9a5567f5e6817fa64ce83a3aea925811eff3a8c3"
+dependencies = [
+ "autocfg",
+ "compiler_builtins",
+ "rustc-std-workspace-alloc",
+ "rustc-std-workspace-core",
+ "scopeguard 1.1.0 (git+https://github.com/sunfishcode/scopeguard?branch=rustc-dep-of-std)",
 ]
 
 [[package]]
@@ -2677,13 +2679,14 @@ checksum = "dd20eec3dbe4376829cb7d80ae6ac45e0a766831dca50202ff2d40db46a8a024"
 
 [[package]]
 name = "origin"
-version = "0.3.1-alpha.0"
-source = "git+https://github.com/sunfishcode/mustang?branch=rustc-dep-of-std#47173c85eb783025bdfef45ab1c6d6aecd8a1f0b"
+version = "0.4.0"
+source = "git+https://github.com/sunfishcode/mustang?branch=rustc-dep-of-std#ea6dbe1030b74e433af462f066a3b43dfcd0a0cb"
 dependencies = [
  "bitflags",
  "compiler_builtins",
  "libc",
- "linux-raw-sys 0.0.44",
+ "linux-raw-sys",
+ "lock_api 0.4.7 (git+https://github.com/sunfishcode/parking_lot?branch=rustc-dep-of-std)",
  "rustc-std-workspace-alloc",
  "rustc-std-workspace-core",
  "rustix",
@@ -2769,7 +2772,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d17b78036a60663b797adeaee46f5c9dfebb86948d1255007a1d6be0271ff99"
 dependencies = [
  "instant",
- "lock_api",
+ "lock_api 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot_core 0.8.5",
 ]
 
@@ -2779,7 +2782,7 @@ version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3742b2c103b9f06bc9fff0a37ff4912935851bee6d36f3c02bcc755bcfec228f"
 dependencies = [
- "lock_api",
+ "lock_api 0.4.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "parking_lot_core 0.9.3",
 ]
 
@@ -4767,12 +4770,12 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.35.6-alpha.1"
-source = "git+https://github.com/bytecodealliance/rustix?branch=rustc-dep-of-std#fde3535ee1f300eef51e9f8d401a551579ce1b01"
+version = "0.35.6"
+source = "git+https://github.com/bytecodealliance/rustix?branch=rustc-dep-of-std#89146707ff7b0a28f93053844ad0c7a095ddf99a"
 dependencies = [
  "bitflags",
  "compiler_builtins",
- "linux-raw-sys 0.0.46",
+ "linux-raw-sys",
  "rustc-std-workspace-alloc",
  "rustc-std-workspace-core",
 ]
@@ -4819,6 +4822,15 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "scopeguard"
+version = "1.1.0"
+source = "git+https://github.com/sunfishcode/scopeguard?branch=rustc-dep-of-std#52da44b8c318ff0bdb205d111d3aa47467969f08"
+dependencies = [
+ "compiler_builtins",
+ "rustc-std-workspace-core",
+]
 
 [[package]]
 name = "security-framework"

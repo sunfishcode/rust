@@ -405,11 +405,11 @@ impl Stdio {
             Stdio::Null => {
                 cfg_if::cfg_if! {
                     if #[cfg(target_os = "redox")] {
-                        let DEV_NULL = rustix::zstr!("null:");
+                        let DEV_NULL = rustix::cstr!("null:");
                     } else if #[cfg(target_os = "vxworks")] {
-                        let DEV_NULL = rustix::zstr!("/null");
+                        let DEV_NULL = rustix::cstr!("/null");
                     } else {
-                        let DEV_NULL = rustix::zstr!("/dev/null");
+                        let DEV_NULL = rustix::cstr!("/dev/null");
                     }
                 }
 

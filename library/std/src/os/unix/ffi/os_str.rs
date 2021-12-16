@@ -1,5 +1,5 @@
 use crate::borrow::Cow;
-use crate::ffi::{OsStr, OsString};
+use crate::ffi::{CStr, CString, OsStr, OsString};
 use crate::mem;
 use crate::sealed::Sealed;
 use crate::sys::os_str::Buf;
@@ -74,7 +74,7 @@ impl OsStrExt for OsStr {
 impl rustix::path::Arg for &OsStr {
     #[inline]
     fn as_str(&self) -> rustix::io::Result<&str> {
-        self.to_str().ok_or(rustix::io::Error::INVAL)
+        self.to_str().ok_or(rustix::io::Errno::INVAL)
     }
 
     #[inline]
@@ -83,28 +83,25 @@ impl rustix::path::Arg for &OsStr {
     }
 
     #[inline]
-    fn as_cow_z_str(&self) -> rustix::io::Result<Cow<'_, rustix::ffi::ZStr>> {
-        Ok(Cow::Owned(
-            rustix::ffi::ZString::new(self.as_bytes())
-                .map_err(|_cstr_err| rustix::io::Error::INVAL)?,
-        ))
+    fn as_cow_c_str(&self) -> rustix::io::Result<Cow<'_, CStr>> {
+        Ok(Cow::Owned(CString::new(self.as_bytes()).map_err(|_cstr_err| rustix::io::Errno::INVAL)?))
     }
 
     #[inline]
-    fn into_z_str<'b>(self) -> rustix::io::Result<Cow<'b, rustix::ffi::ZStr>>
+    fn into_c_str<'b>(self) -> rustix::io::Result<Cow<'b, CStr>>
     where
         Self: 'b,
     {
-        self.as_bytes().into_z_str()
+        self.as_bytes().into_c_str()
     }
 
     #[inline]
-    fn into_with_z_str<T, F>(self, f: F) -> rustix::io::Result<T>
+    fn into_with_c_str<T, F>(self, f: F) -> rustix::io::Result<T>
     where
         Self: Sized,
-        F: FnOnce(&rustix::ffi::ZStr) -> rustix::io::Result<T>,
+        F: FnOnce(&CStr) -> rustix::io::Result<T>,
     {
-        self.as_bytes().into_with_z_str(f)
+        self.as_bytes().into_with_c_str(f)
     }
 }
 
@@ -112,7 +109,7 @@ impl rustix::path::Arg for &OsStr {
 impl rustix::path::Arg for &crate::path::Path {
     #[inline]
     fn as_str(&self) -> rustix::io::Result<&str> {
-        self.as_os_str().to_str().ok_or(rustix::io::Error::INVAL)
+        self.as_os_str().to_str().ok_or(rustix::io::Errno::INVAL)
     }
 
     #[inline]
@@ -121,27 +118,27 @@ impl rustix::path::Arg for &crate::path::Path {
     }
 
     #[inline]
-    fn as_cow_z_str(&self) -> rustix::io::Result<Cow<'_, rustix::ffi::ZStr>> {
+    fn as_cow_c_str(&self) -> rustix::io::Result<Cow<'_, CStr>> {
         Ok(Cow::Owned(
-            rustix::ffi::ZString::new(self.as_os_str().as_bytes())
-                .map_err(|_cstr_err| rustix::io::Error::INVAL)?,
+            CString::new(self.as_os_str().as_bytes())
+                .map_err(|_cstr_err| rustix::io::Errno::INVAL)?,
         ))
     }
 
     #[inline]
-    fn into_z_str<'b>(self) -> rustix::io::Result<Cow<'b, rustix::ffi::ZStr>>
+    fn into_c_str<'b>(self) -> rustix::io::Result<Cow<'b, CStr>>
     where
         Self: 'b,
     {
-        self.as_os_str().into_z_str()
+        self.as_os_str().into_c_str()
     }
 
     #[inline]
-    fn into_with_z_str<T, F>(self, f: F) -> rustix::io::Result<T>
+    fn into_with_c_str<T, F>(self, f: F) -> rustix::io::Result<T>
     where
         Self: Sized,
-        F: FnOnce(&rustix::ffi::ZStr) -> rustix::io::Result<T>,
+        F: FnOnce(&CStr) -> rustix::io::Result<T>,
     {
-        self.as_os_str().into_with_z_str(f)
+        self.as_os_str().into_with_c_str(f)
     }
 }
