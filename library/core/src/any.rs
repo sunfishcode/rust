@@ -177,7 +177,7 @@ use crate::intrinsics;
 // but we would likely want to indicate as such in documentation).
 #[stable(feature = "rust1", since = "1.0.0")]
 #[cfg_attr(not(test), rustc_diagnostic_item = "Any")]
-pub trait Any: 'static {
+pub auto trait Any: 'static {
     /// Gets the `TypeId` of `self`.
     ///
     /// # Examples
@@ -194,13 +194,6 @@ pub trait Any: 'static {
     /// ```
     #[stable(feature = "get_type_id", since = "1.34.0")]
     fn type_id(&self) -> TypeId;
-}
-
-#[stable(feature = "rust1", since = "1.0.0")]
-impl<T: 'static + ?Sized> Any for T {
-    fn type_id(&self) -> TypeId {
-        TypeId::of::<T>()
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
