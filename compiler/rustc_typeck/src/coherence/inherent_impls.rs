@@ -198,6 +198,7 @@ impl<'tcx> InherentCollect<'tcx> {
                 self.check_def_id(item, self_ty, data.principal_def_id().unwrap());
             }
             ty::Dynamic(..) => {
+                /*
                 struct_span_err!(
                     self.tcx.sess,
                     ty.span,
@@ -207,6 +208,7 @@ impl<'tcx> InherentCollect<'tcx> {
                 .span_label(ty.span, "impl requires at least one non-auto trait")
                 .note("define and implement a new trait or type instead")
                 .emit();
+                */
             }
             ty::Bool
             | ty::Char

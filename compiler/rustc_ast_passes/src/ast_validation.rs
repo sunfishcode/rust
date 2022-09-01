@@ -7,7 +7,7 @@
 // or type checking or some other kind of complex analysis.
 
 use itertools::{Either, Itertools};
-use rustc_ast::ptr::P;
+//use rustc_ast::ptr::P;
 use rustc_ast::visit::{self, AssocCtxt, BoundKind, FnCtxt, FnKind, Visitor};
 use rustc_ast::walk_list;
 use rustc_ast::*;
@@ -603,6 +603,7 @@ impl<'a> AstValidator<'a> {
         .emit();
     }
 
+    /*
     fn deny_generic_params(&self, generics: &Generics, ident_span: Span) {
         if !generics.params.is_empty() {
             struct_span_err!(
@@ -672,6 +673,7 @@ impl<'a> AstValidator<'a> {
             .emit();
         }
     }
+    */
 
     fn correct_generic_order_suggestion(&self, data: &AngleBracketedArgs) -> String {
         // Lifetimes always come first.
@@ -1155,10 +1157,10 @@ impl<'a> Visitor<'a> for AstValidator<'a> {
             ItemKind::Trait(box Trait { is_auto, ref generics, ref bounds, ref items, .. }) => {
                 if is_auto == IsAuto::Yes {
                     // Auto traits cannot have generics, super traits nor contain items.
-                    self.deny_generic_params(generics, item.ident.span);
-                    self.deny_super_traits(bounds, item.ident.span);
-                    self.deny_where_clause(&generics.where_clause, item.ident.span);
-                    self.deny_items(items, item.ident.span);
+                    //self.deny_generic_params(generics, item.ident.span);
+                    //self.deny_super_traits(bounds, item.ident.span);
+                    //self.deny_where_clause(&generics.where_clause, item.ident.span);
+                    //self.deny_items(items, item.ident.span);
                 }
 
                 // Equivalent of `visit::walk_item` for `ItemKind::Trait` that inserts a bound
