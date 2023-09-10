@@ -20,7 +20,13 @@ use crate::sys::time::SystemTime;
 use crate::sys::{cvt, cvt_r};
 use crate::sys_common::{AsInner, AsInnerMut, FromInner, IntoInner};
 
-#[cfg(any(all(target_os = "linux", target_env = "gnu"), target_vendor = "apple"))]
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+use rustix::{
+    fs::{AtFlags, StatxFlags, StatxTimestamp},
+    io::Errno,
+};
+
+#[cfg(target_vendor = "apple")]
 use crate::sys::weak::syscall;
 #[cfg(any(target_os = "android", target_os = "macos", target_os = "solaris"))]
 use crate::sys::weak::weak;
@@ -29,7 +35,6 @@ use libc::{c_int, mode_t};
 
 #[cfg(any(
     target_os = "solaris",
-    all(target_os = "linux", target_env = "gnu"),
     target_vendor = "apple",
 ))]
 use libc::c_char;
@@ -138,14 +143,14 @@ cfg_has_statx! {{
     struct StatxExtraFields {
         // This is needed to check if btime is supported by the filesystem.
         stx_mask: u32,
-        stx_btime: libc::statx_timestamp,
+        stx_btime: StatxTimestamp,
         // With statx, we can overcome 32-bit `time_t` too.
         #[cfg(target_pointer_width = "32")]
-        stx_atime: libc::statx_timestamp,
+        stx_atime: StatxTimestamp,
         #[cfg(target_pointer_width = "32")]
-        stx_ctime: libc::statx_timestamp,
+        stx_ctime: StatxTimestamp,
         #[cfg(target_pointer_width = "32")]
-        stx_mtime: libc::statx_timestamp,
+        stx_mtime: StatxTimestamp,
 
     }
 
@@ -154,61 +159,16 @@ cfg_has_statx! {{
     // Default `stat64` contains no creation time and may have 32-bit `time_t`.
     unsafe fn try_statx(
         fd: c_int,
-        path: *const c_char,
-        flags: i32,
-        mask: u32,
+        path: &CStr,
+        flags: AtFlags,
+        mask: StatxFlags,
     ) -> Option<io::Result<FileAttr>> {
-        use crate::sync::atomic::{AtomicU8, Ordering};
-
-        // Linux kernel prior to 4.11 or glibc prior to glibc 2.28 don't support `statx`.
-        // We check for it on first failure and remember availability to avoid having to
-        // do it again.
-        #[repr(u8)]
-        enum STATX_STATE{ Unknown = 0, Present, Unavailable }
-        static STATX_SAVED_STATE: AtomicU8 = AtomicU8::new(STATX_STATE::Unknown as u8);
-
-        syscall! {
-            fn statx(
-                fd: c_int,
-                pathname: *const c_char,
-                flags: c_int,
-                mask: libc::c_uint,
-                statxbuf: *mut libc::statx
-            ) -> c_int
-        }
-
-        if STATX_SAVED_STATE.load(Ordering::Relaxed) == STATX_STATE::Unavailable as u8 {
-            return None;
-        }
-
-        let mut buf: libc::statx = mem::zeroed();
-        if let Err(err) = cvt(statx(fd, path, flags, mask, &mut buf)) {
-            if STATX_SAVED_STATE.load(Ordering::Relaxed) == STATX_STATE::Present as u8 {
-                return Some(Err(err));
-            }
-
-            // We're not yet entirely sure whether `statx` is usable on this kernel
-            // or not. Syscalls can return errors from things other than the kernel
-            // per se, e.g. `EPERM` can be returned if seccomp is used to block the
-            // syscall, or `ENOSYS` might be returned from a faulty FUSE driver.
-            //
-            // Availability is checked by performing a call which expects `EFAULT`
-            // if the syscall is usable.
-            //
-            // See: https://github.com/rust-lang/rust/issues/65662
-            //
-            // FIXME what about transient conditions like `ENOMEM`?
-            let err2 = cvt(statx(0, ptr::null(), 0, libc::STATX_ALL, ptr::null_mut()))
-                .err()
-                .and_then(|e| e.raw_os_error());
-            if err2 == Some(libc::EFAULT) {
-                STATX_SAVED_STATE.store(STATX_STATE::Present as u8, Ordering::Relaxed);
-                return Some(Err(err));
-            } else {
-                STATX_SAVED_STATE.store(STATX_STATE::Unavailable as u8, Ordering::Relaxed);
-                return None;
-            }
-        }
+        let fd = rustix::fd::BorrowedFd::borrow_raw(fd);
+        let buf = match rustix::fs::statx(fd, path, flags, mask) {
+            Ok(buf) => buf,
+            Err(Errno::NOSYS) => return None,
+            Err(err) => return Some(Err(io::Error::from_raw_os_error(err.raw_os_error()))),
+        };
 
         // We cannot fill `stat64` exhaustively because of private padding fields.
         let mut stat: stat64 = mem::zeroed();
@@ -895,21 +855,21 @@ impl DirEntry {
     ))]
     pub fn metadata(&self) -> io::Result<FileAttr> {
         let fd = cvt(unsafe { dirfd(self.dir.dirp.0) })?;
-        let name = self.name_cstr().as_ptr();
+        let name = self.name_cstr();
 
         cfg_has_statx! {
             if let Some(ret) = unsafe { try_statx(
                 fd,
                 name,
-                libc::AT_SYMLINK_NOFOLLOW | libc::AT_STATX_SYNC_AS_STAT,
-                libc::STATX_ALL,
+                AtFlags::SYMLINK_NOFOLLOW | AtFlags::STATX_SYNC_AS_STAT,
+                StatxFlags::ALL,
             ) } {
                 return ret;
             }
         }
 
         let mut stat: stat64 = unsafe { mem::zeroed() };
-        cvt(unsafe { fstatat64(fd, name, &mut stat, libc::AT_SYMLINK_NOFOLLOW) })?;
+        cvt(unsafe { fstatat64(fd, name.as_ptr(), &mut stat, libc::AT_SYMLINK_NOFOLLOW) })?;
         Ok(FileAttr::from_stat64(stat))
     }
 
@@ -1172,13 +1132,12 @@ impl File {
 
     pub fn file_attr(&self) -> io::Result<FileAttr> {
         let fd = self.as_raw_fd();
-
         cfg_has_statx! {
             if let Some(ret) = unsafe { try_statx(
                 fd,
-                c"".as_ptr() as *const c_char,
-                libc::AT_EMPTY_PATH | libc::AT_STATX_SYNC_AS_STAT,
-                libc::STATX_ALL,
+                c"",
+                AtFlags::EMPTY_PATH | AtFlags::STATX_SYNC_AS_STAT,
+                StatxFlags::ALL,
             ) } {
                 return ret;
             }
@@ -1782,9 +1741,9 @@ pub fn stat(p: &Path) -> io::Result<FileAttr> {
         cfg_has_statx! {
             if let Some(ret) = unsafe { try_statx(
                 libc::AT_FDCWD,
-                p.as_ptr(),
-                libc::AT_STATX_SYNC_AS_STAT,
-                libc::STATX_ALL,
+                p,
+                AtFlags::STATX_SYNC_AS_STAT,
+                StatxFlags::ALL,
             ) } {
                 return ret;
             }
@@ -1801,9 +1760,9 @@ pub fn lstat(p: &Path) -> io::Result<FileAttr> {
         cfg_has_statx! {
             if let Some(ret) = unsafe { try_statx(
                 libc::AT_FDCWD,
-                p.as_ptr(),
-                libc::AT_SYMLINK_NOFOLLOW | libc::AT_STATX_SYNC_AS_STAT,
-                libc::STATX_ALL,
+                p,
+                AtFlags::SYMLINK_NOFOLLOW | AtFlags::STATX_SYNC_AS_STAT,
+                StatxFlags::ALL,
             ) } {
                 return ret;
             }

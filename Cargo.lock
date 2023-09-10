@@ -355,6 +355,10 @@ name = "bitflags"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf4b9d6a944f767f8e5e0db018570623c85f3d925ac718db4e06d0187adb21c1"
+dependencies = [
+ "compiler_builtins",
+ "rustc-std-workspace-core",
+]
 
 [[package]]
 name = "block-buffer"
@@ -2249,6 +2253,10 @@ name = "linux-raw-sys"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
+dependencies = [
+ "compiler_builtins",
+ "rustc-std-workspace-core",
+]
 
 [[package]]
 name = "litemap"
@@ -5042,9 +5050,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70dc5ec042f7a43c4a73241207cecc9873a06d45debb38b329f8541d85c2730f"
 dependencies = [
  "bitflags 2.5.0",
+ "compiler_builtins",
  "errno",
  "libc",
  "linux-raw-sys",
+ "rustc-std-workspace-alloc",
+ "rustc-std-workspace-core",
  "windows-sys 0.52.0",
 ]
 
@@ -5358,6 +5369,7 @@ dependencies = [
  "rand",
  "rand_xorshift",
  "rustc-demangle",
+ "rustix",
  "std_detect",
  "unwind",
  "wasi",
